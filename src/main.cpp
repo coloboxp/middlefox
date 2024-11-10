@@ -48,6 +48,31 @@ int getNextImageCount()
   return maxCount + 1;
 }
 
+bool convert_rgb565_to_jpeg(const uint8_t* rgb565_data, int width, int height, uint8_t** jpg_buf_out, size_t* jpg_len_out) {
+    if (!rgb565_data || !jpg_buf_out || !jpg_len_out) {
+        ESP_LOGE(TAG, "Invalid parameters");
+        return false;
+    }
+
+    camera_fb_t fb = {
+        .buf = (uint8_t*)rgb565_data,
+        .len = width * height * 2,  // RGB565 is 2 bytes per pixel
+        .width = width,
+        .height = height,
+        .format = PIXFORMAT_RGB565
+    };
+
+    bool success = frame2jpg(&fb, 100, jpg_buf_out, jpg_len_out);  // Use maximum quality (100)
+    
+    if (success && *jpg_len_out > 0) {
+        ESP_LOGI(TAG, "JPEG conversion successful, size: %d", *jpg_len_out);
+        return true;
+    }
+
+    ESP_LOGE(TAG, "JPEG conversion failed");
+    return false;
+}
+
 void setup()
 {
   delay(3000);
@@ -118,14 +143,12 @@ void loop()
 
   if (currentTime - lastCapture >= CAPTURE_INTERVAL)
   {
-    // Quick LED flash at start of capture
     digitalWrite(LED_PIN, HIGH);
-    delay(100);  // Brief 100ms flash
-    digitalWrite(LED_PIN, LOW);
 
     if (!camera.capture().isOk())
     {
       ESP_LOGE(TAG, "%s", camera.exception.toString().c_str());
+      digitalWrite(LED_PIN, LOW);
       lastCapture = currentTime;
       return;
     }
@@ -143,7 +166,7 @@ void loop()
     // Convert and save highest quality JPEG
     uint8_t *jpg_buf = NULL;
     size_t jpg_len = 0;
-    bool converted = frame2jpg(camera.frame, 0, &jpg_buf, &jpg_len);
+    bool converted = convert_rgb565_to_jpeg(camera.frame->buf, camera.frame->width, camera.frame->height, &jpg_buf, &jpg_len); // 0 = highest quality
 
     if (converted)
     {
@@ -159,6 +182,7 @@ void loop()
       imageCount++;
     }
 
+    digitalWrite(LED_PIN, LOW);
     lastCapture = currentTime;
   }
 }
