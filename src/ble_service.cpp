@@ -86,7 +86,7 @@ void CustomBLEService::handleControlCallback(NimBLECharacteristic *pCharacterist
         default:
             ESP_LOGW(TAG, "Unknown control command received: %c (ASCII: %d)",
                      value[0], (int)value[0]);
-            notifyClients("Unknown Command received %c");
+            notifyClients("Unknown Command: " + std::string(1, value[0]) + " (ASCII: " + std::to_string((int)value[0]) + ")");
             break;
         }
     }
