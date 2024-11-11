@@ -17,10 +17,12 @@ class CustomBLEService
 public:
     enum Command
     {
-        START_OPERATION = '1',
-        STOP_OPERATION = '2',
-        START_PREVIEW = '3',
-        STOP_PREVIEW = '4'
+        START_PREVIEW = '1',
+        STOP_PREVIEW = '2',
+        START_DATA_COLLECTION = '3',
+        STOP_DATA_COLLECTION = '4',
+        START_INFERENCE = '5',
+        STOP_INFERENCE = '6'
     };
 
     enum ConnectionState
@@ -36,6 +38,7 @@ public:
     bool isConnected() { return connectionState == CONNECTED; }
     bool isOperationEnabled() { return operationEnabled; }
     bool isPreviewEnabled() { return previewEnabled; }
+    bool isInferenceEnabled() { return inferenceEnabled; }
     void updateConnectionState(ConnectionState newState);
     void handleControlCallback(NimBLECharacteristic *pCharacteristic);
     void notifyClients(const std::string &message);
@@ -43,10 +46,12 @@ public:
     using StateChangeCallback = std::function<void(bool enabled)>;
     void setOperationCallback(StateChangeCallback cb) { operationCallback = cb; }
     void setPreviewCallback(StateChangeCallback cb) { previewCallback = cb; }
+    void setInferenceCallback(StateChangeCallback cb) { inferenceCallback = cb; }
 
 private:
     static bool operationEnabled;
     static bool previewEnabled;
+    static bool inferenceEnabled;
     ConnectionState connectionState;
 
     NimBLEServer *pServer;
@@ -55,6 +60,7 @@ private:
 
     StateChangeCallback operationCallback;
     StateChangeCallback previewCallback;
+    StateChangeCallback inferenceCallback;
 
     unsigned long lastKeepAlive;
     const unsigned long KEEPALIVE_INTERVAL = 1000;
