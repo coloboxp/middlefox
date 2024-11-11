@@ -1,5 +1,9 @@
 #pragma once
 
+// Camera model selection - MUST BE BEFORE ANY CAMERA INCLUDES
+#define CAMERA_MODEL_XIAO_ESP32S3
+#include "camera_pins.h"
+
 // Operation modes
 enum OperationMode
 {
@@ -9,7 +13,6 @@ enum OperationMode
 
 #define HOSTNAME "MiddleFox"
 // Camera settings
-#define CAMERA_MODEL_XIAO_ESP32S3
 #define LED_PIN 21
 
 // Time intervals

@@ -96,6 +96,7 @@ DataCollector::DataCollector()
     ESP_LOGI(TAG, "Initializing DataCollector");
     lastCapture = 0;
     imageCount = 0;
+    camera = nullptr;
 }
 
 bool DataCollector::begin()
@@ -124,40 +125,10 @@ bool DataCollector::begin()
     imageCount = getNextImageCount();
     ESP_LOGI(TAG, "Image counter initialized. Starting from: %d", imageCount);
 
-    ESP_LOGD(TAG, "Configuring camera settings...");
-    // Configure camera pins
-    ESP_LOGD(TAG, "Configuring camera pins");
-    camera.pinout.pins.d0 = Y2_GPIO_NUM;
-    camera.pinout.pins.d1 = Y3_GPIO_NUM;
-    camera.pinout.pins.d2 = Y4_GPIO_NUM;
-    camera.pinout.pins.d3 = Y5_GPIO_NUM;
-    camera.pinout.pins.d4 = Y6_GPIO_NUM;
-    camera.pinout.pins.d5 = Y7_GPIO_NUM;
-    camera.pinout.pins.d6 = Y8_GPIO_NUM;
-    camera.pinout.pins.d7 = Y9_GPIO_NUM;
-    camera.pinout.pins.xclk = XCLK_GPIO_NUM;
-    camera.pinout.pins.pclk = PCLK_GPIO_NUM;
-    camera.pinout.pins.vsync = VSYNC_GPIO_NUM;
-    camera.pinout.pins.href = HREF_GPIO_NUM;
-    camera.pinout.pins.sccb_sda = SIOD_GPIO_NUM;
-    camera.pinout.pins.sccb_scl = SIOC_GPIO_NUM;
-    camera.pinout.pins.pwdn = PWDN_GPIO_NUM;
-    camera.pinout.pins.reset = RESET_GPIO_NUM;
-
-    // Configure camera settings
-    ESP_LOGD(TAG, "Configuring camera settings");
-    camera.pixformat.rgb565();
-    camera.resolution.face();
-    camera.quality.best();
-    camera.sensor.enableAutomaticExposureControl();
-    camera.sensor.enableAutomaticGainControl();
-    camera.sensor.enableAutomaticWhiteBalance();
-    camera.sensor.enableAutomaticWhiteBalanceGain();
-
-    // Initialize camera
-    if (!camera.begin().isOk())
-    {
-        ESP_LOGE(TAG, "Camera initialization failed");
+    // Get camera instance
+    camera = CameraManager::getInstance().getCamera();
+    if (!camera) {
+        ESP_LOGE(TAG, "Failed to get camera instance");
         return false;
     }
 
@@ -179,9 +150,9 @@ void DataCollector::loop()
         digitalWrite(LED_BUILTIN, HIGH); // Turn OFF
         ESP_LOGV(TAG, "LED ON - Starting capture");
 
-        if (!camera.capture().isOk())
+        if (!camera->capture().isOk())
         {
-            ESP_LOGE(TAG, "Camera capture failed: %s", camera.exception.toString().c_str());
+            ESP_LOGE(TAG, "Camera capture failed: %s", camera->exception.toString().c_str());
             ESP_LOGD(TAG, "Waiting for next capture cycle...");
             lastCapture = currentTime;
             return;
@@ -193,7 +164,7 @@ void DataCollector::loop()
         File rgb_file = SD.open(rgb_path.c_str(), FILE_WRITE);
         if (rgb_file)
         {
-            size_t bytesWritten = rgb_file.write(camera.frame->buf, camera.frame->len);
+            size_t bytesWritten = rgb_file.write(camera->frame->buf, camera->frame->len);
             rgb_file.close();
             ESP_LOGI(TAG, "RGB file saved: %s (Size: %u bytes)", rgb_path.c_str(), bytesWritten);
         }
@@ -205,8 +176,8 @@ void DataCollector::loop()
         // Convert and save JPEG
         uint8_t *jpg_buf = NULL;
         size_t jpg_len = 0;
-        bool converted = convert_rgb565_to_jpeg(camera.frame->buf, camera.frame->width,
-                                                camera.frame->height, &jpg_buf, &jpg_len);
+        bool converted = convert_rgb565_to_jpeg(camera->frame->buf, camera->frame->width,
+                                                camera->frame->height, &jpg_buf, &jpg_len);
 
         if (converted)
         {
