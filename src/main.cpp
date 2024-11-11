@@ -8,6 +8,8 @@
 #include "config.h"
 #include "ble_service.h"
 
+// TODO: Implement web preview server using Eloquent Esp32cam
+
 #ifdef PRODUCTION_MODE
 ModelInference inference;
 #else
@@ -34,11 +36,18 @@ void loop()
 {
   bleService.loop();
 
-  if (bleService.isOperationEnabled()) {
+  if (bleService.isPreviewEnabled())
+  {
+  }
+  else
+  {
+    if (bleService.isOperationEnabled())
+    {
 #ifdef PRODUCTION_MODE
-    inference.loop();
+      inference.loop();
 #else
-    collector.loop();
+      collector.loop();
 #endif
+    }
   }
 }

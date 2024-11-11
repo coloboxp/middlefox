@@ -100,7 +100,7 @@ void CustomBLEService::begin()
 {
     ESP_LOGI(TAG, "Initializing BLE Service...");
 
-    NimBLEDevice::init("MiddleFox");
+    NimBLEDevice::init(HOSTNAME);
 
     // Set power level for better range
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);

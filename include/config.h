@@ -7,6 +7,7 @@ enum OperationMode
     PRODUCTION
 };
 
+#define HOSTNAME "MiddleFox"
 // Camera settings
 #define CAMERA_MODEL_XIAO_ESP32S3
 #define LED_PIN 21
