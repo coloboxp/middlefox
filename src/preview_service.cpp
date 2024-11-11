@@ -2,7 +2,7 @@
 
 const char *PreviewService::TAG = "PreviewService";
 
-PreviewService::PreviewService() : streamEnabled(false), camera(nullptr)
+PreviewService::PreviewService(CustomBLEService *ble) : streamEnabled(false), camera(nullptr), bleService(ble)
 {
     ESP_LOGI(TAG, "Creating PreviewService instance");
     ESP_LOGV(TAG, "Initial state: streamEnabled=%d, camera=nullptr", streamEnabled);
@@ -45,9 +45,16 @@ bool PreviewService::initWiFi()
     delay(100); // Wait for AP to start
     IPAddress ip = WiFi.softAPIP();
 
-    ESP_LOGI(TAG, "AP Ready - Connect to '%s' with NO password", ssid.c_str());
-    ESP_LOGI(TAG, "AP IP Address: %s", ip.toString().c_str());
-    ESP_LOGD(TAG, "AP Channel: %d, Max Connections: %d", WiFi.channel(), WiFi.softAPgetStationNum());
+    JsonDocument doc;
+    doc["status"] = "enabled";
+    doc["ssid"] = ssid.c_str();
+    doc["ip"] = ip.toString().c_str();
+    doc["channel"] = WiFi.channel();
+    doc["stream_url"] = streamAddress.c_str();
+
+    std::string infoJson;
+    serializeJsonPretty(doc, infoJson);
+    bleService->updatePreviewInfo(infoJson);
 
     return true;
 }
@@ -111,6 +118,13 @@ void PreviewService::disable()
     stopMJPEGServer();
     stopWiFi();
     streamEnabled = false;
+
+    JsonDocument doc;
+    doc["status"] = "Preview service not enabled";
+
+    std::string infoJson;
+    serializeJsonPretty(doc, infoJson);
+    bleService->updatePreviewInfo(infoJson);
 }
 
 void PreviewService::stopWiFi()
@@ -147,6 +161,16 @@ void PreviewService::loop()
                  WiFi.softAPgetStationNum(),
                  ESP.getFreeHeap(),
                  ESP.getFreePsram());
+
+        JsonDocument doc;
+        doc["clients"] = WiFi.softAPgetStationNum();
+        doc["heap"] = ESP.getFreeHeap();
+        doc["psram"] = ESP.getFreePsram();
+
+        std::string metrics;
+        serializeJsonPretty(doc, metrics);
+
+        bleService->updateServiceMetrics("preview", metrics);
         lastMetricsLog = millis();
     }
 }

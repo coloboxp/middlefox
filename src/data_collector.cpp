@@ -91,7 +91,7 @@ int DataCollector::getNextImageCount()
     return maxCount + 1;
 }
 
-DataCollector::DataCollector()
+DataCollector::DataCollector(CustomBLEService *ble) : bleService(ble)
 {
     ESP_LOGI(TAG, "Initializing DataCollector");
     lastCapture = 0;
@@ -127,7 +127,8 @@ bool DataCollector::begin()
 
     // Get camera instance
     camera = CameraManager::getInstance().getCamera();
-    if (!camera) {
+    if (!camera)
+    {
         ESP_LOGE(TAG, "Failed to get camera instance");
         return false;
     }
@@ -143,21 +144,22 @@ void DataCollector::loop()
     if (currentTime - lastCapture >= CAPTURE_INTERVAL_MS)
     {
         ESP_LOGD(TAG, "=== Starting New Capture Cycle ===");
-        ESP_LOGV(TAG, "Time since last capture: %lu ms", currentTime - lastCapture);
 
         digitalWrite(LED_BUILTIN, LOW); // Turn ON
         delay(100);
         digitalWrite(LED_BUILTIN, HIGH); // Turn OFF
-        ESP_LOGV(TAG, "LED ON - Starting capture");
 
         if (!camera->capture().isOk())
         {
+            std::string errorMsg = "Capture failed: ";
+            errorMsg += camera->exception.toString().c_str();
+            bleService->updateServiceStatus("collector", errorMsg);
             ESP_LOGE(TAG, "Camera capture failed: %s", camera->exception.toString().c_str());
-            ESP_LOGD(TAG, "Waiting for next capture cycle...");
             lastCapture = currentTime;
             return;
         }
-        ESP_LOGI(TAG, "Image captured successfully");
+
+        bleService->updateServiceStatus("collector", "Image captured successfully");
 
         // Save RGB565 raw data
         String rgb_path = "/picture" + String(imageCount) + ".rgb";
@@ -203,5 +205,14 @@ void DataCollector::loop()
         ESP_LOGI(TAG, "=== Capture Cycle Complete ===");
         ESP_LOGD(TAG, "Total images captured: %d", imageCount);
         ESP_LOGV(TAG, "Next capture in %d ms", CAPTURE_INTERVAL_MS);
+
+        // Add more detailed status updates
+        JsonDocument doc;
+        doc["image_count"] = imageCount;
+        doc["last_capture"] = millis() - lastCapture;
+        
+        std::string metrics;
+        serializeJsonPretty(doc, metrics);
+        bleService->updateServiceMetrics("collector", metrics);
     }
 }

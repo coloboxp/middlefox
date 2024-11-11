@@ -11,16 +11,14 @@
 #include "camera_manager.h"
 
 // TODO: Implement web preview server using Eloquent Esp32cam
-
-PreviewService previewService;
+CustomBLEService bleService;
+PreviewService previewService(&bleService);
 
 #ifdef PRODUCTION_MODE
-ModelInference inference;
+ModelInference inference(&bleService);
 #else
-DataCollector collector;
+DataCollector collector(&bleService);
 #endif
-
-CustomBLEService bleService;
 
 void setup()
 {

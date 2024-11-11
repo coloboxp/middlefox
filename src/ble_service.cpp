@@ -1,10 +1,13 @@
 #include "ble_service.h"
 
 static const char *TAG = "BLEService";
-bool CustomBLEService::operationEnabled = false;
+bool CustomBLEService::captureEnabled = false;
 bool CustomBLEService::previewEnabled = false;
 bool CustomBLEService::inferenceEnabled = false;
 CustomBLEService *globalBLEService = nullptr;
+
+static const unsigned long STATUS_UPDATE_INTERVAL = 5000;  // 5 seconds for general status
+static const unsigned long SERVICE_UPDATE_INTERVAL = 1000; // 1 second for service updates
 
 class ControlCallbacks : public NimBLECharacteristicCallbacks
 {
@@ -71,14 +74,14 @@ void CustomBLEService::handleControlCallback(NimBLECharacteristic *pCharacterist
             ESP_LOGI(TAG, "Preview Stopped - Streaming disabled");
             break;
         case Command::START_DATA_COLLECTION:
-            operationEnabled = true;
+            captureEnabled = true;
             if (operationCallback)
                 operationCallback(true);
             notifyClients("Operation Started");
             ESP_LOGI(TAG, "Operation Started - Device is now capturing");
             break;
         case Command::STOP_DATA_COLLECTION:
-            operationEnabled = false;
+            captureEnabled = false;
             if (operationCallback)
                 operationCallback(false);
             notifyClients("Operation Stopped");
@@ -87,7 +90,7 @@ void CustomBLEService::handleControlCallback(NimBLECharacteristic *pCharacterist
         case Command::START_INFERENCE:
             inferenceEnabled = true;
             notifyClients("Inference Started");
-            ESP_LOGI(TAG, "Inference Started - Device is now capturing");
+            ESP_LOGI(TAG, "Inference Started - Device is now infering");
             break;
         case Command::STOP_INFERENCE:
             inferenceEnabled = false;
@@ -110,62 +113,51 @@ void CustomBLEService::handleControlCallback(NimBLECharacteristic *pCharacterist
 void CustomBLEService::begin()
 {
     ESP_LOGI(TAG, "Initializing BLE Service...");
-
     NimBLEDevice::init(HOSTNAME);
-
-    // Set power level for better range
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);
 
     pServer = NimBLEDevice::createServer();
     pServer->setCallbacks(new ServerCallbacks());
 
+    // Create service
     NimBLEService *pService = pServer->createService(SERVICE_UUID);
 
-    // Control characteristic
+    // Control characteristic (WRITE only)
     pControlCharacteristic = pService->createCharacteristic(
         CONTROL_CHAR_UUID,
-        NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY);
+        NIMBLE_PROPERTY::WRITE);
     pControlCharacteristic->setCallbacks(new ControlCallbacks());
 
-    // Add a user description descriptor
-    pControlCharacteristic->createDescriptor(
-                              NimBLEUUID("2901"),
-                              NIMBLE_PROPERTY::READ,
-                              100 // Increased max length to fit command list
-                              )
-        ->setValue("Commands: 1=Start Data Collection, 2=Stop Data Collection, 3=Start Preview, 4=Stop Preview, 5=Start Inference, 6=Stop Inference");
+    // Menu characteristic (READ only)
+    NimBLECharacteristic *pMenuCharacteristic = pService->createCharacteristic(
+        "BEB5483E-36E1-4688-B7F5-EA07361B26AA", // New UUID for menu
+        NIMBLE_PROPERTY::READ);
+    std::string commandDescription =
+        "Available Commands:\n"
+        "1: Start Preview\n"
+        "2: Stop Preview\n"
+        "3: Start Data Collection\n"
+        "4: Stop Data Collection\n"
+        "5: Start Inference\n"
+        "6: Stop Inference";
+    pMenuCharacteristic->setValue(commandDescription);
 
-    // Add a presentation format descriptor for better client handling
-    uint8_t format[] = {0x20,        // format: utf8s
-                        0x00,        // exponent: 0
-                        0x00,        // unit: none
-                        0x27,        // namespace: 0x27
-                        0x00, 0x00}; // description
-    pControlCharacteristic->createDescriptor(
-                              NimBLEUUID("2904"),
-                              NIMBLE_PROPERTY::READ,
-                              sizeof(format))
-        ->setValue(format, sizeof(format));
-
-    // Status characteristic for device state updates
+    // Status characteristic (READ + NOTIFY)
     pStatusCharacteristic = pService->createCharacteristic(
         STATUS_CHAR_UUID,
         NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
 
-    // Fix descriptor creation - using the correct UUID format and properties
-    pControlCharacteristic->createDescriptor(
-                              NimBLEUUID("2901"),
-                              NIMBLE_PROPERTY::READ,
-                              20 // Max length
-                              )
-        ->setValue("Camera Control");
-
-    pStatusCharacteristic->createDescriptor(
-                             NimBLEUUID("2901"),
-                             NIMBLE_PROPERTY::READ,
-                             20 // Max length
-                             )
-        ->setValue("Device Status");
+    pPreviewInfoCharacteristic = pService->createCharacteristic(
+        PREVIEW_INFO_CHAR_UUID,
+        NIMBLE_PROPERTY::READ
+    );
+    
+    // Set initial value
+    JsonDocument doc;
+    doc["status"] = "Preview service not enabled";
+    std::string initialValue;
+    serializeJsonPretty(doc, initialValue);
+    pPreviewInfoCharacteristic->setValue(initialValue);
 
     if (!pService->start())
     {
@@ -173,14 +165,12 @@ void CustomBLEService::begin()
         return;
     }
 
-    // Enhanced advertising configuration
+    // Advertising configuration
     NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
     pAdvertising->setScanResponse(true);
-    pAdvertising->setMinPreferred(0x06); // Functions that help with iPhone connections issue
+    pAdvertising->setMinPreferred(0x06);
     pAdvertising->setMaxPreferred(0x12);
-
-    NimBLEDevice::startSecurity(0); // Enable security
 
     if (!pAdvertising->start())
     {
@@ -194,31 +184,33 @@ void CustomBLEService::begin()
 void CustomBLEService::loop()
 {
     static unsigned long lastStatusUpdate = 0;
+    static unsigned long lastServiceUpdate = 0;
+    unsigned long currentTime = millis();
 
-    // Regular status updates
-    if (millis() - lastStatusUpdate > 1000)
+    if (currentTime - lastStatusUpdate > STATUS_UPDATE_INTERVAL)
     {
-        if (isConnected())
+        if (isConnected() && !previewEnabled && !captureEnabled && !inferenceEnabled)
         {
-            // Create status message as JSON string
-            char statusMsg[200];
-            snprintf(statusMsg, sizeof(statusMsg),
-                     "{\"op\":%s,\"preview\":%s,\"uptime\":%lu}",
-                     operationEnabled ? "true" : "false",
-                     previewEnabled ? "true" : "false",
-                     millis() / 1000);
+            JsonDocument doc;
+            doc["type"] = "status";
+            doc["op"] = captureEnabled;
+            doc["preview"] = previewEnabled;
+            doc["inference"] = inferenceEnabled;
+            doc["uptime"] = currentTime / 1000;
 
-            pStatusCharacteristic->setValue(statusMsg);
+            std::string output;
+            serializeJsonPretty(doc, output);
+
+            pStatusCharacteristic->setValue(output);
             pStatusCharacteristic->notify();
         }
-        lastStatusUpdate = millis();
+        lastStatusUpdate = currentTime;
     }
 
     // Keep-alive check
-    if (isConnected() && millis() - lastKeepAlive > KEEPALIVE_INTERVAL)
+    if (isConnected() && currentTime - lastKeepAlive > KEEPALIVE_INTERVAL)
     {
-        // Implement keep-alive mechanism
-        lastKeepAlive = millis();
+        lastKeepAlive = currentTime;
     }
 }
 
@@ -226,7 +218,14 @@ void CustomBLEService::notifyClients(const std::string &message)
 {
     if (pStatusCharacteristic && isConnected())
     {
-        pStatusCharacteristic->setValue(message);
+        JsonDocument doc;
+        doc["type"] = "notification";
+        doc["message"] = message;
+
+        std::string output;
+        serializeJsonPretty(doc, output);
+
+        pStatusCharacteristic->setValue(output);
         pStatusCharacteristic->notify();
     }
 }
@@ -247,5 +246,45 @@ void CustomBLEService::updateConnectionState(ConnectionState newState)
                  newState == CONNECTED ? "connected" : "disconnected");
         pStatusCharacteristic->setValue(statusMsg);
         pStatusCharacteristic->notify();
+    }
+}
+
+void CustomBLEService::updateServiceStatus(const std::string &service, const std::string &status)
+{
+    if (pStatusCharacteristic && isConnected())
+    {
+        JsonDocument doc;
+        doc["type"] = "service_status";
+        doc["service"] = service;
+        doc["status"] = status;
+
+        std::string output;
+        serializeJsonPretty(doc, output);
+
+        pStatusCharacteristic->setValue(output);
+        pStatusCharacteristic->notify();
+    }
+}
+
+void CustomBLEService::updateServiceMetrics(const std::string &service, const std::string &metrics)
+{
+    if (pStatusCharacteristic && isConnected())
+    {
+        JsonDocument doc;
+        doc["service"] = service;
+        doc["type"] = "metrics";
+        doc["data"] = metrics;
+
+        std::string output;
+        serializeJsonPretty(doc, output);
+
+        pStatusCharacteristic->setValue(output);
+        pStatusCharacteristic->notify();
+    }
+}
+
+void CustomBLEService::updatePreviewInfo(const std::string& info) {
+    if (pPreviewInfoCharacteristic) {
+        pPreviewInfoCharacteristic->setValue(info);
     }
 }
