@@ -86,7 +86,7 @@ void CustomBLEService::handleControlCallback(NimBLECharacteristic *pCharacterist
         default:
             ESP_LOGW(TAG, "Unknown control command received: %c (ASCII: %d)",
                      value[0], (int)value[0]);
-            notifyClients("Unknown Command received " + value);
+            notifyClients("Unknown Command received %c");
             break;
         }
     }
@@ -100,7 +100,7 @@ void CustomBLEService::begin()
 {
     ESP_LOGI(TAG, "Initializing BLE Service...");
 
-    NimBLEDevice::init("ESP32-CAM");
+    NimBLEDevice::init("MiddleFox");
 
     // Set power level for better range
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);
