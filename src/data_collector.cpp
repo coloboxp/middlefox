@@ -2,9 +2,12 @@
 
 using namespace Eloquent::Esp32cam;
 static Camera::Camera camera;
-static const char *TAG = "DataCollector";
 
-bool convert_rgb565_to_jpeg(const uint8_t *rgb565_data, int width, int height, uint8_t **jpg_buf_out, size_t *jpg_len_out)
+// Define the static TAG member
+const char *DataCollector::TAG = "DataCollector";
+
+bool DataCollector::convert_rgb565_to_jpeg(const uint8_t *rgb565_data, int width, int height, 
+                                         uint8_t **jpg_buf_out, size_t *jpg_len_out)
 {
     if (!rgb565_data || !jpg_buf_out || !jpg_len_out)
     {
@@ -17,7 +20,8 @@ bool convert_rgb565_to_jpeg(const uint8_t *rgb565_data, int width, int height, u
         .len = static_cast<size_t>(width * height * 2),
         .width = static_cast<size_t>(width),
         .height = static_cast<size_t>(height),
-        .format = PIXFORMAT_RGB565};
+        .format = PIXFORMAT_RGB565
+    };
 
     bool success = frame2jpg(&fb, 100, jpg_buf_out, jpg_len_out);
 
@@ -210,7 +214,7 @@ void DataCollector::loop()
         JsonDocument doc;
         doc["image_count"] = imageCount;
         doc["last_capture"] = millis() - lastCapture;
-        
+
         std::string metrics;
         serializeJsonPretty(doc, metrics);
         bleService->updateServiceMetrics("collector", metrics);

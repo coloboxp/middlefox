@@ -30,31 +30,18 @@ bool PreviewService::begin()
 bool PreviewService::initWiFi()
 {
     ESP_LOGD(TAG, "Setting up WiFi Access Point...");
-    ESP_LOGV(TAG, "WiFi Mode: %d", WiFi.getMode());
 
-    // Configure AP
     String ssid = HOSTNAME;
-    ESP_LOGD(TAG, "Generated SSID: %s", ssid.c_str());
 
     if (!WiFi.softAP(ssid.c_str(), ""))
     {
-        ESP_LOGE(TAG, "Failed to create Access Point - Check WiFi configuration");
+        ESP_LOGE(TAG, "Failed to create Access Point");
         return false;
     }
 
     delay(100); // Wait for AP to start
     IPAddress ip = WiFi.softAPIP();
-
-    JsonDocument doc;
-    doc["status"] = "enabled";
-    doc["ssid"] = ssid.c_str();
-    doc["ip"] = ip.toString().c_str();
-    doc["channel"] = WiFi.channel();
-    doc["stream_url"] = streamAddress.c_str();
-
-    std::string infoJson;
-    serializeJsonPretty(doc, infoJson);
-    bleService->updatePreviewInfo(infoJson);
+    ESP_LOGI(TAG, "WiFi AP started with IP: %s", ip.toString().c_str());
 
     return true;
 }
@@ -99,8 +86,52 @@ void PreviewService::enable()
         return;
     }
 
-    ESP_LOGV(TAG, "State transition: %d -> 1", streamEnabled);
+    // Create custom allocator for PSRAM
+    struct PsramAllocator : ArduinoJson::Allocator {
+        void* allocate(size_t size) {
+            return heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+        }
+
+        void deallocate(void* ptr) {
+            heap_caps_free(ptr);
+        }
+
+        void* reallocate(void* ptr, size_t new_size) {
+            return heap_caps_realloc(ptr, new_size, MALLOC_CAP_SPIRAM);
+        }
+    };
+
+    // Create document with PSRAM allocator
+    PsramAllocator allocator;
+    JsonDocument doc(&allocator);
+    
+    // Basic status
+    doc["status"] = "enabled";
+    
+    // WiFi information using to<JsonObject>()
+    JsonObject wifi = doc["wifi"].to<JsonObject>();
+    wifi["ssid"] = String(HOSTNAME);
+    wifi["ip"] = WiFi.softAPIP().toString();
+    wifi["channel"] = WiFi.channel();
+    
+    // Stream information using to<JsonObject>()
+    JsonObject stream = doc["stream"].to<JsonObject>();
+    stream["url"] = String(streamAddress);
+    stream["type"] = "MJPEG";
+    stream["port"] = 81;
+
+    // Debug log before serialization
+    String debugOutput;
+    serializeJsonPretty(doc, debugOutput);
+    ESP_LOGD(TAG, "Preview info to send: %s", debugOutput.c_str());
+
+    // Convert to string for BLE
+    String output;
+    serializeJson(doc, output);
+    bleService->updatePreviewInfo(output.c_str());
+
     streamEnabled = true;
+    ESP_LOGV(TAG, "State transition: disabled -> enabled");
 }
 
 void PreviewService::disable()

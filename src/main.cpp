@@ -55,17 +55,18 @@ void loop()
     previewService.enable();
     previewService.loop();
   }
-  else
+  else if (previewService.isEnabled())
   {
     previewService.disable();
-
-    if (bleService.isOperationEnabled())
-    {
-#ifdef PRODUCTION_MODE
-      inference.loop();
-#else
-      collector.loop();
-#endif
-    }
   }
+
+  if (!bleService.isPreviewEnabled() && bleService.isOperationEnabled())
+  {
+#ifdef PRODUCTION_MODE
+    inference.loop();
+#else
+    collector.loop();
+#endif
+  }
+  delay(50);
 }

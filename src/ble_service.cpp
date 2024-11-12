@@ -43,6 +43,12 @@ class ServerCallbacks : public NimBLEServerCallbacks
     }
 };
 
+class PreviewInfoCallbacks: public NimBLECharacteristicCallbacks {
+    void onRead(NimBLECharacteristic* pCharacteristic) {
+        ESP_LOGD("BLEService", "Preview info read: %s", pCharacteristic->getValue().c_str());
+    }
+};
+
 CustomBLEService::CustomBLEService()
 {
     globalBLEService = this;
@@ -130,8 +136,9 @@ void CustomBLEService::begin()
 
     // Menu characteristic (READ only)
     NimBLECharacteristic *pMenuCharacteristic = pService->createCharacteristic(
-        "BEB5483E-36E1-4688-B7F5-EA07361B26AA", // New UUID for menu
-        NIMBLE_PROPERTY::READ);
+        "BEB5483E-36E1-4688-B7F5-EA07361B26AB",  // Changed last digit to avoid conflict
+        NIMBLE_PROPERTY::READ
+    );
     std::string commandDescription =
         "Available Commands:\n"
         "1: Start Preview\n"
@@ -147,17 +154,27 @@ void CustomBLEService::begin()
         STATUS_CHAR_UUID,
         NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
 
+    // Preview info characteristic (READ + NOTIFY)
     pPreviewInfoCharacteristic = pService->createCharacteristic(
         PREVIEW_INFO_CHAR_UUID,
-        NIMBLE_PROPERTY::READ
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
     );
-    
+
+    if (!pPreviewInfoCharacteristic) {
+        ESP_LOGE(TAG, "Failed to create preview info characteristic!");
+        return;
+    }
+
     // Set initial value
     JsonDocument doc;
     doc["status"] = "Preview service not enabled";
     std::string initialValue;
     serializeJsonPretty(doc, initialValue);
+    
     pPreviewInfoCharacteristic->setValue(initialValue);
+    pPreviewInfoCharacteristic->setCallbacks(new PreviewInfoCallbacks());
+
+    ESP_LOGI(TAG, "Preview info characteristic initialized with value: %s", initialValue.c_str());
 
     if (!pService->start())
     {
@@ -285,6 +302,19 @@ void CustomBLEService::updateServiceMetrics(const std::string &service, const st
 
 void CustomBLEService::updatePreviewInfo(const std::string& info) {
     if (pPreviewInfoCharacteristic) {
+        // Verify the JSON is valid before setting
+        JsonDocument verify;
+        DeserializationError error = deserializeJson(verify, info);
+        
+        if (error) {
+            ESP_LOGE(TAG, "Invalid JSON in updatePreviewInfo: %s", error.c_str());
+            return;
+        }
+
         pPreviewInfoCharacteristic->setValue(info);
+        pPreviewInfoCharacteristic->notify();
+        ESP_LOGD(TAG, "Preview info updated: %s", info.c_str());
+    } else {
+        ESP_LOGE(TAG, "Preview info characteristic is null!");
     }
 }
