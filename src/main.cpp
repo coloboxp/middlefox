@@ -23,27 +23,43 @@ DataCollector collector(&bleService);
 void setup()
 {
   Serial.begin(115200);
-  delay(3000); // Give time for serial monitor to connect
+  
+  // Wait for USB CDC
+  while (!Serial) {
+    delay(10);
+  }
+  
+  Serial.println("\n\n=== Device Starting ===");
+  Serial.println("Initializing...");
+  delay(1000);
 
+  Serial.println("Starting camera init...");
   // Initialize camera first
   if (!CameraManager::getInstance().begin(true))
   {
+    Serial.println("Camera init failed!");
     ESP_LOGE("Main", "Failed to initialize camera - System halted");
     while (1)
     {
       delay(1000);
     }
   }
+  Serial.println("Camera init success!");
   ESP_LOGI("Main", "Camera initialized successfully");
 
+  Serial.println("Starting BLE...");
   bleService.begin();
+  Serial.println("Starting Preview Service...");
   previewService.begin();
 
 #ifdef PRODUCTION_MODE
   inference.begin();
 #else
+  Serial.println("Starting Data Collector...");
   collector.begin();
 #endif
+
+  Serial.println("Setup complete!");
 }
 
 void loop()
@@ -55,9 +71,12 @@ void loop()
     previewService.enable();
     previewService.loop();
   }
-  else if (previewService.isEnabled())
+  else
   {
-    previewService.disable();
+    if (previewService.isEnabled())
+    {
+      previewService.disable();
+    }
   }
 
   if (!bleService.isPreviewEnabled() && bleService.isOperationEnabled())
