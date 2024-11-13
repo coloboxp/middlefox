@@ -61,9 +61,19 @@ bool CameraManager::configureCamera(bool isPreviewMode)
 {
     ESP_LOGD(TAG, "Configuring camera for %s mode", isPreviewMode ? "preview" : "capture");
 
-    camera.pixformat.rgb565();
-    camera.resolution.face();
-    camera.quality.best();
+    camera.brownout.disable();
+    if (isPreviewMode)
+    {
+        camera.resolution.vga();
+        camera.quality.high();
+    }
+    else
+    {
+        camera.pixformat.rgb565();
+        camera.resolution.face();
+        camera.quality.best();
+    }
+
     camera.sensor.enableAutomaticExposureControl();
     camera.sensor.enableAutomaticGainControl();
     camera.sensor.enableAutomaticWhiteBalance();

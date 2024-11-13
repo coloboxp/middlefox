@@ -1,5 +1,8 @@
 #include "preview_service.h"
 
+#define WIFI_SSID HOSTNAME
+#define WIFI_PASS ""
+
 const char *PreviewService::TAG = "PreviewService";
 
 PreviewService::PreviewService(CustomBLEService *ble) : streamEnabled(false), camera(nullptr), bleService(ble)
@@ -50,6 +53,10 @@ bool PreviewService::initMJPEGServer()
 {
     ESP_LOGD(TAG, "Initializing MJPEG server...");
 
+    // Configure camera for streaming
+    camera->resolution.vga();
+    camera->quality.high();
+    
     if (!mjpeg.begin().isOk())
     {
         ESP_LOGE(TAG, "MJPEG server initialization failed: %s", mjpeg.exception.toString().c_str());
@@ -65,17 +72,36 @@ bool PreviewService::initMJPEGServer()
 
 void PreviewService::enable()
 {
-    ESP_LOGI(TAG, "Enabling preview stream");
-
-    if (streamEnabled)
-    {
-        ESP_LOGD(TAG, "Stream already enabled");
+    static unsigned long lastEnableAttempt = 0;
+    const unsigned long DEBOUNCE_TIME = 1000; // 1 second debounce
+    
+    unsigned long currentTime = millis();
+    
+    // Add timing check to prevent rapid repeated calls
+    if (currentTime - lastEnableAttempt < DEBOUNCE_TIME) {
+        ESP_LOGW(TAG, "Enable request ignored - too soon after last attempt (%lu ms)", 
+                 currentTime - lastEnableAttempt);
         return;
     }
+    
+    lastEnableAttempt = currentTime;
+    
+    // Check if already enabled
+    if (streamEnabled)
+    {
+        ESP_LOGW(TAG, "Stream already enabled - state: %d", streamEnabled);
+        return;
+    }
+
+    ESP_LOGI(TAG, "Enabling preview stream");
+    
+    // Set flag first to prevent re-entrancy
+    streamEnabled = true;
 
     if (!initWiFi())
     {
         ESP_LOGE(TAG, "Failed to start WiFi AP");
+        streamEnabled = false;  // Reset flag on failure
         return;
     }
 
@@ -83,20 +109,25 @@ void PreviewService::enable()
     {
         ESP_LOGE(TAG, "Failed to start MJPEG server");
         stopWiFi();
+        streamEnabled = false;  // Reset flag on failure
         return;
     }
 
     // Create custom allocator for PSRAM
-    struct PsramAllocator : ArduinoJson::Allocator {
-        void* allocate(size_t size) {
+    struct PsramAllocator : ArduinoJson::Allocator
+    {
+        void *allocate(size_t size)
+        {
             return heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
         }
 
-        void deallocate(void* ptr) {
+        void deallocate(void *ptr)
+        {
             heap_caps_free(ptr);
         }
 
-        void* reallocate(void* ptr, size_t new_size) {
+        void *reallocate(void *ptr, size_t new_size)
+        {
             return heap_caps_realloc(ptr, new_size, MALLOC_CAP_SPIRAM);
         }
     };
@@ -104,16 +135,16 @@ void PreviewService::enable()
     // Create document with PSRAM allocator
     PsramAllocator allocator;
     JsonDocument doc(&allocator);
-    
+
     // Basic status
     doc["status"] = "enabled";
-    
+
     // WiFi information using to<JsonObject>()
     JsonObject wifi = doc["wifi"].to<JsonObject>();
     wifi["ssid"] = String(HOSTNAME);
     wifi["ip"] = WiFi.softAPIP().toString();
     wifi["channel"] = WiFi.channel();
-    
+
     // Stream information using to<JsonObject>()
     JsonObject stream = doc["stream"].to<JsonObject>();
     stream["url"] = String(streamAddress);
@@ -130,7 +161,6 @@ void PreviewService::enable()
     serializeJson(doc, output);
     bleService->updatePreviewInfo(output.c_str());
 
-    streamEnabled = true;
     ESP_LOGV(TAG, "State transition: disabled -> enabled");
 }
 

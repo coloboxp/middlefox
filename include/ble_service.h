@@ -5,6 +5,8 @@
 #include <NimBLEDevice.h>
 #include "esp_log.h"
 #include <map>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 #define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CONTROL_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
@@ -35,6 +37,11 @@ public:
     };
 
     CustomBLEService();
+    ~CustomBLEService() {
+        if (mutex != NULL) {
+            vSemaphoreDelete(mutex);
+        }
+    }
     void begin();
     void loop();
     bool isConnected() { return connectionState == CONNECTED; }
@@ -76,4 +83,6 @@ private:
 
     std::map<std::string, std::string> serviceStatus;
     void sendStatusUpdate();
+
+    SemaphoreHandle_t mutex;
 };

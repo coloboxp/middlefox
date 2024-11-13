@@ -1,4 +1,6 @@
 #include "ble_service.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 static const char *TAG = "BLEService";
 bool CustomBLEService::captureEnabled = false;
@@ -53,7 +55,9 @@ CustomBLEService::CustomBLEService()
 {
     globalBLEService = this;
     connectionState = DISCONNECTED;
-    lastKeepAlive = millis(); // Initialize lastKeepAlive
+    lastKeepAlive = millis();
+    // Create mutex
+    mutex = xSemaphoreCreateMutex();
 }
 
 void CustomBLEService::handleControlCallback(NimBLECharacteristic *pCharacteristic)
@@ -118,117 +122,129 @@ void CustomBLEService::handleControlCallback(NimBLECharacteristic *pCharacterist
 
 void CustomBLEService::begin()
 {
-    ESP_LOGI(TAG, "Initializing BLE Service...");
-    NimBLEDevice::init(HOSTNAME);
-    NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+    if (xSemaphoreTake(mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        ESP_LOGI(TAG, "Initializing BLE Service...");
+        
+        // Stop any existing advertising/server
+        if (NimBLEDevice::getInitialized()) {
+            NimBLEDevice::deinit(true);
+            delay(500); // Give time for cleanup
+        }
 
-    pServer = NimBLEDevice::createServer();
-    pServer->setCallbacks(new ServerCallbacks());
+        // Initialize NimBLE with higher stability settings
+        NimBLEDevice::init(HOSTNAME);
+        
+        // Configure device
+        NimBLEDevice::setPower(ESP_PWR_LVL_P9); // Set max power
+        NimBLEDevice::setSecurityAuth(false, false, true); // No bonding, no MITM, but encryption
+        NimBLEDevice::setMTU(185); // Lower MTU for better stability
+        
+        pServer = NimBLEDevice::createServer();
+        pServer->setCallbacks(new ServerCallbacks());
 
-    // Create service
-    NimBLEService *pService = pServer->createService(SERVICE_UUID);
+        // Create service
+        NimBLEService *pService = pServer->createService(SERVICE_UUID);
 
-    // Control characteristic (WRITE only)
-    pControlCharacteristic = pService->createCharacteristic(
-        CONTROL_CHAR_UUID,
-        NIMBLE_PROPERTY::WRITE);
-    pControlCharacteristic->setCallbacks(new ControlCallbacks());
+        // Control characteristic (WRITE only)
+        pControlCharacteristic = pService->createCharacteristic(
+            CONTROL_CHAR_UUID,
+            NIMBLE_PROPERTY::WRITE);
+        pControlCharacteristic->setCallbacks(new ControlCallbacks());
 
-    // Menu characteristic (READ only)
-    NimBLECharacteristic *pMenuCharacteristic = pService->createCharacteristic(
-        "BEB5483E-36E1-4688-B7F5-EA07361B26AB",  // Changed last digit to avoid conflict
-        NIMBLE_PROPERTY::READ
-    );
-    std::string commandDescription =
-        "Available Commands:\n"
-        "1: Start Preview\n"
-        "2: Stop Preview\n"
-        "3: Start Data Collection\n"
-        "4: Stop Data Collection\n"
-        "5: Start Inference\n"
-        "6: Stop Inference";
-    pMenuCharacteristic->setValue(commandDescription);
+        // Menu characteristic (READ only)
+        NimBLECharacteristic *pMenuCharacteristic = pService->createCharacteristic(
+            "BEB5483E-36E1-4688-B7F5-EA07361B26AB",  // Changed last digit to avoid conflict
+            NIMBLE_PROPERTY::READ
+        );
+        std::string commandDescription =
+            "Available Commands:\n"
+            "1: Start Preview\n"
+            "2: Stop Preview\n"
+            "3: Start Data Collection\n"
+            "4: Stop Data Collection\n"
+            "5: Start Inference\n"
+            "6: Stop Inference";
+        pMenuCharacteristic->setValue(commandDescription);
 
-    // Status characteristic (READ + NOTIFY)
-    pStatusCharacteristic = pService->createCharacteristic(
-        STATUS_CHAR_UUID,
-        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+        // Status characteristic (READ + NOTIFY)
+        pStatusCharacteristic = pService->createCharacteristic(
+            STATUS_CHAR_UUID,
+            NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
 
-    // Preview info characteristic (READ + NOTIFY)
-    pPreviewInfoCharacteristic = pService->createCharacteristic(
-        PREVIEW_INFO_CHAR_UUID,
-        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
-    );
+        // Preview info characteristic (READ + NOTIFY)
+        pPreviewInfoCharacteristic = pService->createCharacteristic(
+            PREVIEW_INFO_CHAR_UUID,
+            NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
+        );
 
-    if (!pPreviewInfoCharacteristic) {
-        ESP_LOGE(TAG, "Failed to create preview info characteristic!");
-        return;
+        if (!pPreviewInfoCharacteristic) {
+            ESP_LOGE(TAG, "Failed to create preview info characteristic!");
+            return;
+        }
+
+        // Set initial value
+        JsonDocument doc;
+        doc["status"] = "Preview service not enabled";
+        std::string initialValue;
+        serializeJsonPretty(doc, initialValue);
+        
+        pPreviewInfoCharacteristic->setValue(initialValue);
+        pPreviewInfoCharacteristic->setCallbacks(new PreviewInfoCallbacks());
+
+        ESP_LOGI(TAG, "Preview info characteristic initialized with value: %s", initialValue.c_str());
+
+        if (!pService->start()) {
+            ESP_LOGE(TAG, "Failed to start BLE service!");
+            xSemaphoreGive(mutex);
+            return;
+        }
+
+        // Configure advertising with more conservative settings
+        NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
+        pAdvertising->addServiceUUID(SERVICE_UUID);
+        pAdvertising->setScanResponse(true);
+        pAdvertising->setMinInterval(0x20); // Slower advertising interval
+        pAdvertising->setMaxInterval(0x40); // (x * 0.625) ms
+        pAdvertising->setMinPreferred(0x0);  // Remove min preferred
+        pAdvertising->setMaxPreferred(0x0);  // Remove max preferred
+        
+        if (!pAdvertising->start(0)) { // Advertise forever
+            ESP_LOGE(TAG, "Failed to start advertising!");
+            xSemaphoreGive(mutex);
+            return;
+        }
+
+        ESP_LOGI(TAG, "BLE Service Started Successfully - Device Name: %s", HOSTNAME);
+        xSemaphoreGive(mutex);
     }
-
-    // Set initial value
-    JsonDocument doc;
-    doc["status"] = "Preview service not enabled";
-    std::string initialValue;
-    serializeJsonPretty(doc, initialValue);
-    
-    pPreviewInfoCharacteristic->setValue(initialValue);
-    pPreviewInfoCharacteristic->setCallbacks(new PreviewInfoCallbacks());
-
-    ESP_LOGI(TAG, "Preview info characteristic initialized with value: %s", initialValue.c_str());
-
-    if (!pService->start())
-    {
-        ESP_LOGE(TAG, "Failed to start BLE service!");
-        return;
-    }
-
-    // Advertising configuration
-    NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
-    pAdvertising->addServiceUUID(SERVICE_UUID);
-    pAdvertising->setScanResponse(true);
-    pAdvertising->setMinPreferred(0x06);
-    pAdvertising->setMaxPreferred(0x12);
-
-    if (!pAdvertising->start())
-    {
-        ESP_LOGE(TAG, "Failed to start advertising!");
-        return;
-    }
-
-    ESP_LOGI(TAG, "BLE Service Started Successfully");
 }
 
 void CustomBLEService::loop()
 {
-    static unsigned long lastStatusUpdate = 0;
-    static unsigned long lastServiceUpdate = 0;
+    static unsigned long lastAdvertisingCheck = 0;
     unsigned long currentTime = millis();
 
-    if (currentTime - lastStatusUpdate > STATUS_UPDATE_INTERVAL)
-    {
-        if (isConnected() && !previewEnabled && !captureEnabled && !inferenceEnabled)
-        {
-            JsonDocument doc;
-            doc["type"] = "status";
-            doc["op"] = captureEnabled;
-            doc["preview"] = previewEnabled;
-            doc["inference"] = inferenceEnabled;
-            doc["uptime"] = currentTime / 1000;
-
-            std::string output;
-            serializeJsonPretty(doc, output);
-
-            pStatusCharacteristic->setValue(output);
-            pStatusCharacteristic->notify();
+    if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        // Check if we need to restart advertising
+        if (!isConnected() && (currentTime - lastAdvertisingCheck >= 5000)) { // Check every 5 seconds
+            lastAdvertisingCheck = currentTime;
+            
+            if (!NimBLEDevice::getAdvertising()->isAdvertising()) {
+                ESP_LOGI(TAG, "Restarting advertising...");
+                NimBLEDevice::getAdvertising()->start(0);
+            }
         }
-        lastStatusUpdate = currentTime;
-    }
 
-    // Keep-alive check
-    if (isConnected() && currentTime - lastKeepAlive > KEEPALIVE_INTERVAL)
-    {
-        lastKeepAlive = currentTime;
+        // Keep-alive for connected clients
+        if (isConnected() && (currentTime - lastKeepAlive >= KEEPALIVE_INTERVAL)) {
+            lastKeepAlive = currentTime;
+            notifyClients("Device alive");
+        }
+
+        xSemaphoreGive(mutex);
     }
+    
+    vTaskDelay(pdMS_TO_TICKS(20)); // Slightly longer delay
 }
 
 void CustomBLEService::notifyClients(const std::string &message)
@@ -249,20 +265,20 @@ void CustomBLEService::notifyClients(const std::string &message)
 
 void CustomBLEService::updateConnectionState(ConnectionState newState)
 {
-    connectionState = newState;
-    ESP_LOGI(TAG, "Connection state changed to: %s",
-             newState == CONNECTED ? "Connected" : newState == CONNECTING ? "Connecting"
-                                                                          : "Disconnected");
+    if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        connectionState = newState;
+        ESP_LOGI(TAG, "Connection state changed to: %s",
+                 newState == CONNECTED ? "Connected" : 
+                 newState == CONNECTING ? "Connecting" : "Disconnected");
 
-    // Notify clients about connection state change
-    if (pStatusCharacteristic && isConnected())
-    {
-        char statusMsg[200];
-        snprintf(statusMsg, sizeof(statusMsg),
-                 "{\"connection\":\"%s\"}",
-                 newState == CONNECTED ? "connected" : "disconnected");
-        pStatusCharacteristic->setValue(statusMsg);
-        pStatusCharacteristic->notify();
+        if (newState == DISCONNECTED) {
+            // Restart advertising on disconnect
+            if (!NimBLEDevice::getAdvertising()->start(0)) {
+                ESP_LOGE(TAG, "Failed to restart advertising!");
+            }
+        }
+
+        xSemaphoreGive(mutex);
     }
 }
 
