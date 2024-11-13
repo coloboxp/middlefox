@@ -12,6 +12,8 @@
 #define CONTROL_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 #define STATUS_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a9"
 #define PREVIEW_INFO_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26aa"
+#define SERVICE_STATUS_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a9"
+#define SERVICE_METRICS_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26aa"
 
 class CustomBLEService;                    // Forward declaration
 extern CustomBLEService *globalBLEService; // Global instance pointer
@@ -37,10 +39,15 @@ public:
     };
 
     CustomBLEService();
-    ~CustomBLEService() {
-        if (mutex != NULL) {
+    ~CustomBLEService()
+    {
+        if (mutex != nullptr)
+        {
             vSemaphoreDelete(mutex);
+            mutex = nullptr;
         }
+        globalBLEService = nullptr;
+        cleanup();
     }
     void begin();
     void loop();
@@ -60,7 +67,12 @@ public:
     void updateServiceStatus(const std::string &service, const std::string &status);
     void updateServiceMetrics(const std::string &service, const std::string &metrics);
 
-    void updatePreviewInfo(const std::string& info);
+    void updatePreviewInfo(const std::string &info);
+
+    void handleDisconnection();
+    void cleanup();
+    bool updateState(bool& stateVar, bool newValue);
+    void checkConnectionHealth();
 
 private:
     static bool captureEnabled;
@@ -73,6 +85,8 @@ private:
     NimBLECharacteristic *pControlCharacteristic;
     NimBLECharacteristic *pStatusCharacteristic;
     NimBLECharacteristic *pPreviewInfoCharacteristic;
+    NimBLECharacteristic *pServiceStatusCharacteristic;
+    NimBLECharacteristic *pServiceMetricsCharacteristic;
 
     StateChangeCallback operationCallback;
     StateChangeCallback previewCallback;
