@@ -28,13 +28,8 @@ TaskHandle_t mainTaskHandle = NULL;
 
 // Task for BLE operations
 void bleTask(void *parameter) {
-  ESP_LOGI("BLE Task", "Starting BLE service...");
+  ESP_LOGI("BLE Task", "Starting BLE service loop...");
   
-  // Give system time to stabilize before starting BLE
-  vTaskDelay(pdMS_TO_TICKS(1000));
-  
-  bleService.begin();
-
   while (true) {
     bleService.loop();
     vTaskDelay(pdMS_TO_TICKS(20));
@@ -119,22 +114,32 @@ void mainTask(void *parameter) {
 void setup() {
   Serial.begin(115200);
   
-  // Wait for USB CDC
-  while (!Serial) {
+  // Add delay to ensure stable power and initialization
+  delay(500);
+  
+  // Only wait for Serial in debug builds
+#ifdef DEBUG
+  unsigned long startTime = millis();
+  while (!Serial && (millis() - startTime < 3000)) {
     delay(10);
   }
+#endif
   
   Serial.println("\n\n=== Device Starting ===");
+  
+  // Initialize BLE before creating tasks
+  bleService.begin();
+  delay(100); // Give BLE time to initialize
   
   // Create BLE task with higher priority and larger stack
   xTaskCreatePinnedToCore(
     bleTask,
     "BLE Task",
-    16384,        // Doubled stack size
+    16384,
     NULL,
-    2,           // Higher priority
+    2,
     &bleTaskHandle,
-    0            // Core 0
+    0
   );
 
   // Create main task

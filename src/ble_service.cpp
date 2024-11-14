@@ -147,7 +147,19 @@ void CustomBLEService::begin()
         ESP_LOGE(TAG, "Failed to take mutex in begin()");
         return;
     }
+    
+    // Add check to prevent double initialization
+    static bool initialized = false;
+    if (initialized) {
+        ESP_LOGW(TAG, "BLE Service already initialized");
+        xSemaphoreGive(mutex);
+        return;
+    }
+    
     ESP_LOGI(TAG, "Initializing BLE Service...");
+
+    // Add delay for stable initialization
+    delay(100);
 
     NimBLEDevice::init(HOSTNAME);
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);
@@ -240,6 +252,8 @@ void CustomBLEService::begin()
 
     ESP_LOGI(TAG, "BLE Service Started Successfully - Device Name: %s", HOSTNAME);
     xSemaphoreGive(mutex);
+
+    initialized = true;
 }
 
 void CustomBLEService::loop()
