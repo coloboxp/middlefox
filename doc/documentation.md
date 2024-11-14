@@ -4,17 +4,25 @@
 
 This diagram shows the relationships and structure between the main system components.
 
+[View Class Diagram](classses.md)
+
 ## 2. State Diagram
 
 This diagram illustrates the different states and transitions in the system.
+
+[View State Diagram](state.md)
 
 ## 3. Sequence Diagram
 
 This diagram shows the interaction between different components over time.
 
+[View Sequence Diagram](sequence.md)
+
 ## 4. Flow Diagram
 
 This diagram represents the overall system flow and decision points.
+
+[View Flow Diagram](flow.md)
 
 ## Component Descriptions
 
