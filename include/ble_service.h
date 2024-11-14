@@ -14,6 +14,7 @@
 #define PREVIEW_INFO_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26aa"
 #define SERVICE_STATUS_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a9"
 #define SERVICE_METRICS_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26aa"
+#define MENU_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26ab"
 
 class CustomBLEService;                    // Forward declaration
 extern CustomBLEService *globalBLEService; // Global instance pointer
@@ -71,7 +72,7 @@ public:
 
     void handleDisconnection();
     void cleanup();
-    bool updateState(bool& stateVar, bool newValue);
+    bool updateState(bool &stateVar, bool newValue);
     void checkConnectionHealth();
 
 private:

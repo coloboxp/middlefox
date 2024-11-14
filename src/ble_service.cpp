@@ -147,15 +147,16 @@ void CustomBLEService::begin()
         ESP_LOGE(TAG, "Failed to take mutex in begin()");
         return;
     }
-    
+
     // Add check to prevent double initialization
     static bool initialized = false;
-    if (initialized) {
+    if (initialized)
+    {
         ESP_LOGW(TAG, "BLE Service already initialized");
         xSemaphoreGive(mutex);
         return;
     }
-    
+
     ESP_LOGI(TAG, "Initializing BLE Service...");
 
     // Add delay for stable initialization
@@ -179,7 +180,7 @@ void CustomBLEService::begin()
 
     // Menu characteristic
     NimBLECharacteristic *pMenuCharacteristic = pService->createCharacteristic(
-        "BEB5483E-36E1-4688-B7F5-EA07361B26AB",
+        MENU_CHAR_UUID,
         NIMBLE_PROPERTY::READ);
     std::string commandDescription =
         "Available Commands:\n"
@@ -260,30 +261,34 @@ void CustomBLEService::loop()
 {
     static unsigned long lastCheck = 0;
     const unsigned long CHECK_INTERVAL = 5000; // Check every 5 seconds
-    
-    if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+
+    if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE)
+    {
         unsigned long now = millis();
-        
+
         // Periodic connection check
-        if (now - lastCheck >= CHECK_INTERVAL) {
+        if (now - lastCheck >= CHECK_INTERVAL)
+        {
             lastCheck = now;
-            
-            if (isConnected() && !pServer->getConnectedCount()) {
+
+            if (isConnected() && !pServer->getConnectedCount())
+            {
                 ESP_LOGW(TAG, "Connection state mismatch detected");
                 updateConnectionState(DISCONNECTED);
                 handleDisconnection();
             }
         }
-        
+
         // Keep-alive mechanism
-        if (isConnected() && (now - lastKeepAlive >= KEEPALIVE_INTERVAL)) {
+        if (isConnected() && (now - lastKeepAlive >= KEEPALIVE_INTERVAL))
+        {
             lastKeepAlive = now;
             notifyClients("keepalive");
         }
-        
+
         xSemaphoreGive(mutex);
     }
-    
+
     vTaskDelay(pdMS_TO_TICKS(10)); // Shorter delay for better responsiveness
 }
 
@@ -390,50 +395,61 @@ void CustomBLEService::updatePreviewInfo(const std::string &info)
 void CustomBLEService::handleDisconnection()
 {
     ESP_LOGI(TAG, "Handling disconnection...");
-    
+
     // Reset states
     captureEnabled = false;
     previewEnabled = false;
     inferenceEnabled = false;
-    
+
     // Notify callbacks if needed
-    if (operationCallback) operationCallback(false);
-    if (previewCallback) previewCallback(false);
-    if (inferenceCallback) inferenceCallback(false);
-    
+    if (operationCallback)
+        operationCallback(false);
+    if (previewCallback)
+        previewCallback(false);
+    if (inferenceCallback)
+        inferenceCallback(false);
+
     // Restart advertising with retry mechanism
     const int MAX_RETRY = 3;
     const int RETRY_DELAY = 1000; // 1 second
-    
-    for (int i = 0; i < MAX_RETRY; i++) {
-        if (NimBLEDevice::getAdvertising()->start()) {
+
+    for (int i = 0; i < MAX_RETRY; i++)
+    {
+        if (NimBLEDevice::getAdvertising()->start())
+        {
             ESP_LOGI(TAG, "Advertising restarted successfully");
             return;
         }
         ESP_LOGW(TAG, "Failed to restart advertising, attempt %d of %d", i + 1, MAX_RETRY);
         delay(RETRY_DELAY);
     }
-    
+
     ESP_LOGE(TAG, "Failed to restart advertising after all retries");
 }
 
-void CustomBLEService::cleanup() {
-    if (xSemaphoreTake(mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-        if (pServer) {
+void CustomBLEService::cleanup()
+{
+    if (xSemaphoreTake(mutex, pdMS_TO_TICKS(1000)) == pdTRUE)
+    {
+        if (pServer)
+        {
             pServer->stopAdvertising();
             pServer = nullptr;
         }
         xSemaphoreGive(mutex);
     }
-    
-    if (mutex) {
+
+    if (mutex)
+    {
         vSemaphoreDelete(mutex);
         mutex = nullptr;
     }
 }
 
-bool CustomBLEService::updateState(bool& stateVar, bool newValue) {
-    if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+bool CustomBLEService::updateState(bool &stateVar, bool newValue)
+{
+    if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE)
+    {
         stateVar = newValue;
         xSemaphoreGive(mutex);
         return true;
@@ -441,14 +457,18 @@ bool CustomBLEService::updateState(bool& stateVar, bool newValue) {
     return false;
 }
 
-void CustomBLEService::checkConnectionHealth() {
+void CustomBLEService::checkConnectionHealth()
+{
     static unsigned long lastCheck = 0;
     const unsigned long CHECK_INTERVAL = 30000; // 30 seconds
-    
-    if (millis() - lastCheck >= CHECK_INTERVAL) {
-        if (isConnected()) {
+
+    if (millis() - lastCheck >= CHECK_INTERVAL)
+    {
+        if (isConnected())
+        {
             // Verify connection is still active
-            if (!pServer->getConnectedCount()) {
+            if (!pServer->getConnectedCount())
+            {
                 ESP_LOGW(TAG, "Connection state mismatch detected");
                 updateConnectionState(DISCONNECTED);
             }
