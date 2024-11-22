@@ -2,6 +2,7 @@
 
 // Camera model selection - MUST BE BEFORE ANY CAMERA INCLUDES
 #define CAMERA_MODEL_XIAO_ESP32S3
+#define DISPLAY_MODEL U8G2_SSD1306_128X64_NONAME_1_HW_I2C
 #include "camera_pins.h"
 
 // Operation modes
