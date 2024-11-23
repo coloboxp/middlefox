@@ -77,7 +77,7 @@ public:
         globalBLEService = nullptr;
         cleanup();
     }
-    void begin();
+    bool begin();
     void loop();
     bool isConnected() { return connectionState == CONNECTED; }
     bool isOperationEnabled() { return captureEnabled; }
@@ -101,6 +101,8 @@ public:
     void cleanup();
     bool updateState(bool &stateVar, bool newValue);
     void checkConnectionHealth();
+
+    static bool isCaptureEnabled() { return captureEnabled; }
 
 private:
     static const char* TAG;  // Define if not already defined

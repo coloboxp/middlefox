@@ -28,9 +28,13 @@ bool SystemInitializer::initializeBLE()
 {
     try
     {
-        bleService.begin();
-        ESP_LOGI(TAG, "BLE initialized successfully");
-        return true;
+        bool success = bleService.begin();
+        if (success) {
+            ESP_LOGI(TAG, "BLE initialized successfully");
+        } else {
+            ESP_LOGE(TAG, "BLE initialization failed");
+        }
+        return success;
     }
     catch (const std::exception &e)
     {
@@ -74,4 +78,25 @@ void SystemInitializer::showStartupIcons()
     } catch (const std::exception& e) {
         ESP_LOGE(TAG, "Error showing startup icons: %s", e.what());
     }
+}
+
+bool initSystem() {
+    // Initialize BLE first
+    CustomBLEService bleService;
+    if (!bleService.begin()) {
+        return false;
+    }
+
+    // Initialize camera manager
+    if (!CameraManager::getInstance().begin(false)) {
+        return false;
+    }
+
+    // Initialize data collector
+    DataCollector dataCollector(&bleService);
+    if (!dataCollector.begin()) {
+        return false;
+    }
+
+    return true;
 }

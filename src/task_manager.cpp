@@ -53,13 +53,13 @@ void TaskManager::bleTask(void* parameter) {
 
 void TaskManager::mainTask(void* parameter) {
     while (true) {
-        if (bleService.captureEnabled) {
+        if (bleService.isCaptureEnabled()) {
             collector.loop();
-        } else if (bleService.previewEnabled) {
+        } else if (bleService.isPreviewEnabled()) {
             previewService.loop();
         }
         #ifdef PRODUCTION_MODE
-        else if (bleService.inferenceEnabled) {
+        else if (bleService.isInferenceEnabled()) {
             inference.loop();
         }
         #endif

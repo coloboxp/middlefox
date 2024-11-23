@@ -135,7 +135,7 @@ void CustomBLEService::handleControlCallback(NimBLECharacteristic *pCharacterist
     }
 }
 
-void CustomBLEService::begin()
+bool CustomBLEService::begin()
 {
     ESP_LOGI(TAG, "=== Starting BLE Service Initialization ===");
     ESP_LOGD(TAG, "Taking mutex for initialization...");
@@ -143,7 +143,7 @@ void CustomBLEService::begin()
     if (xSemaphoreTake(mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
     {
         ESP_LOGE(TAG, "❌ Failed to take mutex in begin() - Timeout after 1000ms");
-        return;
+        return false;
     }
 
     static bool initialized = false;
@@ -151,7 +151,7 @@ void CustomBLEService::begin()
     {
         ESP_LOGW(TAG, "⚠️ BLE Service already initialized");
         xSemaphoreGive(mutex);
-        return;
+        return true;
     }
 
     ESP_LOGI(TAG, "1️⃣ Initializing NimBLE Device...");
@@ -167,7 +167,7 @@ void CustomBLEService::begin()
     {
         ESP_LOGE(TAG, "❌ Failed to create BLE server");
         xSemaphoreGive(mutex);
-        return;
+        return false;
     }
     pServer->setCallbacks(new ServerCallbacks());
 
@@ -177,7 +177,7 @@ void CustomBLEService::begin()
     {
         ESP_LOGE(TAG, "❌ Failed to create BLE service");
         xSemaphoreGive(mutex);
-        return;
+        return false;
     }
 
     ESP_LOGI(TAG, "4️⃣ Creating Characteristics...");
@@ -191,7 +191,7 @@ void CustomBLEService::begin()
     {
         ESP_LOGE(TAG, "❌ Failed to create Control characteristic");
         xSemaphoreGive(mutex);
-        return;
+        return false;
     }
     pControlCharacteristic->setCallbacks(new ControlCallbacks());
 
@@ -204,7 +204,7 @@ void CustomBLEService::begin()
     {
         ESP_LOGE(TAG, "❌ Failed to create Status characteristic");
         xSemaphoreGive(mutex);
-        return;
+        return false;
     }
 
     // Preview Info Characteristic
@@ -216,7 +216,7 @@ void CustomBLEService::begin()
     {
         ESP_LOGE(TAG, "❌ Failed to create Preview Info characteristic");
         xSemaphoreGive(mutex);
-        return;
+        return false;
     }
 
     // Menu Characteristic
@@ -228,7 +228,7 @@ void CustomBLEService::begin()
     {
         ESP_LOGE(TAG, "❌ Failed to create Menu characteristic");
         xSemaphoreGive(mutex);
-        return;
+        return false;
     }
     std::string commandDescription =
         "Available Commands:\n"
@@ -249,7 +249,7 @@ void CustomBLEService::begin()
     {
         ESP_LOGE(TAG, "❌ Failed to create Service Status characteristic");
         xSemaphoreGive(mutex);
-        return;
+        return false;
     }
 
     // Service Metrics Characteristic
@@ -261,7 +261,7 @@ void CustomBLEService::begin()
     {
         ESP_LOGE(TAG, "❌ Failed to create Service Metrics characteristic");
         xSemaphoreGive(mutex);
-        return;
+        return false;
     }
 
     ESP_LOGI(TAG, "5️⃣ Starting BLE Service...");
@@ -269,7 +269,7 @@ void CustomBLEService::begin()
     {
         ESP_LOGE(TAG, "❌ Failed to start BLE service");
         xSemaphoreGive(mutex);
-        return;
+        return false;
     }
 
     ESP_LOGI(TAG, "6️⃣ Starting Advertising...");
@@ -283,7 +283,7 @@ void CustomBLEService::begin()
     {
         ESP_LOGE(TAG, "❌ Failed to start advertising");
         xSemaphoreGive(mutex);
-        return;
+        return false;
     }
 
     initialized = true;
@@ -291,6 +291,7 @@ void CustomBLEService::begin()
     ESP_LOGI(TAG, "=== BLE Service Initialization Complete ===");
 
     xSemaphoreGive(mutex);
+    return true;
 }
 
 bool CustomBLEService::createControlCharacteristic()

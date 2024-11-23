@@ -101,50 +101,64 @@ DataCollector::DataCollector(CustomBLEService *ble) : bleService(ble)
     lastCapture = 0;
     imageCount = 0;
     camera = nullptr;
+    cameraMutex = xSemaphoreCreateMutex();
+}
+
+DataCollector::~DataCollector() {
+    cleanup();
+}
+
+void DataCollector::cleanup() {
+    if (cameraMutex) {
+        vSemaphoreDelete(cameraMutex);
+        cameraMutex = nullptr;
+    }
+    camera = nullptr;  // Don't delete, it's managed by CameraManager
 }
 
 bool DataCollector::begin()
 {
     ESP_LOGI(TAG, "=== Starting DataCollector Initialization ===");
-    pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, HIGH); // LED off initially
+    
+    if (!cameraMutex) {
+        ESP_LOGE(TAG, "Failed to create camera mutex");
+        return false;
+    }
 
     // Initialize SD card first
-    if (!SD.begin(21))
-    {
-        ESP_LOGE(TAG, "SD Card Mount Failed - Check SD card connection");
+    if (!initSD()) {
+        ESP_LOGE(TAG, "SD Card initialization failed");
         return false;
     }
-    ESP_LOGI(TAG, "SD card mounted successfully");
 
-    uint8_t cardType = SD.cardType();
-    if (cardType == CARD_NONE)
-    {
-        ESP_LOGE(TAG, "No SD card detected - Please insert an SD card");
+    // Get camera instance with mutex protection
+    if (xSemaphoreTake(cameraMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        camera = CameraManager::getInstance().getCamera();
+        if (!camera) {
+            ESP_LOGE(TAG, "Failed to get camera instance");
+            xSemaphoreGive(cameraMutex);
+            return false;
+        }
+
+        // Configure camera
+        camera->resolution.vga();
+        camera->quality.high();
+        
+        if (!camera->begin().isOk()) {
+            ESP_LOGE(TAG, "Camera initialization failed: %s", 
+                    camera->exception.toString().c_str());
+            xSemaphoreGive(cameraMutex);
+            return false;
+        }
+        xSemaphoreGive(cameraMutex);
+    } else {
+        ESP_LOGE(TAG, "Failed to acquire camera mutex");
         return false;
     }
-    ESP_LOGD(TAG, "SD Card Type: %d", cardType);
 
-    // Get the next available image count and log it
+    // Get the next available image count
     imageCount = getNextImageCount();
     ESP_LOGI(TAG, "Image counter initialized. Starting from: %d", imageCount);
-
-    // Get camera instance and initialize it
-    camera = CameraManager::getInstance().getCamera();
-    if (!camera)
-    {
-        ESP_LOGE(TAG, "Failed to get camera instance");
-        return false;
-    }
-
-    // Configure camera for capture
-    camera->resolution.vga();
-    camera->quality.high();
-    
-    if (!camera->begin().isOk()) {
-        ESP_LOGE(TAG, "Camera initialization failed: %s", camera->exception.toString().c_str());
-        return false;
-    }
 
     ESP_LOGI(TAG, "=== DataCollector Initialization Complete ===");
     return true;
@@ -152,15 +166,22 @@ bool DataCollector::begin()
 
 void DataCollector::loop()
 {
-    // Only proceed if capture mode is enabled via BLE
-    if (!bleService || !bleService->captureEnabled) {
+    if (!bleService || !bleService->isCaptureEnabled()) {
+        return;
+    }
+
+    if (!camera || !cameraMutex) {
+        ESP_LOGE(TAG, "Camera or mutex not initialized");
         return;
     }
 
     unsigned long currentTime = millis();
+    if (currentTime - lastCapture >= CAPTURE_INTERVAL_MS) {
+        if (xSemaphoreTake(cameraMutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            ESP_LOGE(TAG, "Failed to acquire camera mutex");
+            return;
+        }
 
-    if (currentTime - lastCapture >= CAPTURE_INTERVAL_MS)
-    {
         ESP_LOGD(TAG, "=== Starting New Capture Cycle ===");
 
         digitalWrite(LED_BUILTIN, LOW); // Turn ON
@@ -172,6 +193,7 @@ void DataCollector::loop()
             std::string errorMsg = "Capture failed: ";
             errorMsg += camera->exception.toString().c_str();
             bleService->updateServiceStatus("collector", errorMsg);
+            xSemaphoreGive(cameraMutex);
             return;
         }
 
@@ -230,5 +252,7 @@ void DataCollector::loop()
         std::string metrics;
         serializeJsonPretty(doc, metrics);
         bleService->updateServiceMetrics("collector", metrics);
+
+        xSemaphoreGive(cameraMutex);
     }
 }

@@ -12,17 +12,20 @@ class DataCollector
 {
 public:
     DataCollector(CustomBLEService *ble);
+    ~DataCollector();
     bool begin();
     void loop();
+    void cleanup();
 
 private:
     Camera::Camera *camera;
     unsigned long lastCapture;
     int imageCount;
     CustomBLEService *bleService;
-    int getNextImageCount();
-    bool initSD();
     static const char *TAG;
-    static bool convert_rgb565_to_jpeg(const uint8_t *rgb565_data, int width, int height, 
+    SemaphoreHandle_t cameraMutex;
+    bool initSD();
+    int getNextImageCount();
+    bool convert_rgb565_to_jpeg(const uint8_t *rgb565_data, int width, int height, 
                                      uint8_t **jpg_buf_out, size_t *jpg_len_out);
 };
