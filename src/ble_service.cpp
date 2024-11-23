@@ -84,33 +84,58 @@ void CustomBLEService::handleControlCallback(NimBLECharacteristic *pCharacterist
 
         switch (value[0])
         {
-        case Command::START_PREVIEW: // Start Preview
-            updateState(previewEnabled, true);
-            if (previewCallback)
-                previewCallback(true);
-            notifyClients("Preview Started");
-            ESP_LOGI(TAG, "Preview Started - Streaming enabled");
+        case Command::START_PREVIEW:
+            if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                previewEnabled = true;
+                xSemaphoreGive(mutex);
+                
+                // First notify the preview callback to initialize
+                if (previewCallback) {
+                    previewCallback(true);
+                }
+                
+                // Then update status and notify clients
+                updateServiceStatus("preview", "starting");
+                notifyClients("Preview Starting");
+                ESP_LOGI(TAG, "Preview Mode Activated - Initializing stream...");
+            } else {
+                ESP_LOGE(TAG, "Failed to take mutex in START_PREVIEW");
+            }
             break;
-        case Command::STOP_PREVIEW: // Stop Preview
-            previewEnabled = false;
-            if (previewCallback)
-                previewCallback(false);
-            notifyClients("Preview Stopped");
-            ESP_LOGI(TAG, "Preview Stopped - Streaming disabled");
+        case Command::STOP_PREVIEW:
+            if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                previewEnabled = false;
+                xSemaphoreGive(mutex);
+                
+                if (previewCallback)
+                    previewCallback(false);
+                notifyClients("Preview Stopped");
+                ESP_LOGI(TAG, "Preview Stopped - Streaming disabled");
+            } else {
+                ESP_LOGE(TAG, "Failed to take mutex in STOP_PREVIEW");
+            }
             break;
         case Command::START_DATA_COLLECTION:
-            captureEnabled = true;
-            if (operationCallback)
-                operationCallback(true);
-            notifyClients("Operation Started");
-            ESP_LOGI(TAG, "Operation Started - Device is now capturing");
+            if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                captureEnabled = true;
+                xSemaphoreGive(mutex);
+                
+                if (operationCallback)
+                    operationCallback(true);
+                notifyClients("Operation Started");
+                ESP_LOGI(TAG, "Operation Started - Device is now capturing");
+            }
             break;
         case Command::STOP_DATA_COLLECTION:
-            captureEnabled = false;
-            if (operationCallback)
-                operationCallback(false);
-            notifyClients("Operation Stopped");
-            ESP_LOGI(TAG, "Operation Stopped - Device is now idle");
+            if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                captureEnabled = false;
+                xSemaphoreGive(mutex);
+                
+                if (operationCallback)
+                    operationCallback(false);
+                notifyClients("Operation Stopped");
+                ESP_LOGI(TAG, "Operation Stopped - Device is now idle");
+            }
             break;
         case Command::START_INFERENCE:
             inferenceEnabled = true;

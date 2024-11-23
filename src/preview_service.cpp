@@ -8,7 +8,24 @@ const char *PreviewService::TAG = "PreviewService";
 PreviewService::PreviewService(CustomBLEService *ble) : streamEnabled(false), camera(nullptr), bleService(ble)
 {
     ESP_LOGI(TAG, "Creating PreviewService instance");
-    ESP_LOGV(TAG, "Initial state: streamEnabled=%d, camera=nullptr", streamEnabled);
+    
+    bleService->setPreviewCallback([this](bool enabled) {
+        ESP_LOGI(TAG, "Preview callback triggered: %s", enabled ? "ENABLE" : "DISABLE");
+        if (enabled) {
+            streamEnabled = true;
+        } else {
+            this->disable();
+            streamEnabled = false;
+            
+            // Check if we need to restart
+            if (!bleService->isPreviewEnabled() && !bleService->isCaptureEnabled()) {
+                ESP_LOGI(TAG, "All services stopped - Triggering restart");
+                bleService->notifyClients("Restarting device to idle state...");
+                delay(1000);
+                ESP.restart();
+            }
+        }
+    });
 }
 
 bool PreviewService::begin()
@@ -16,6 +33,7 @@ bool PreviewService::begin()
     ESP_LOGI(TAG, "=== Starting PreviewService Initialization ===");
     ESP_LOGV(TAG, "Memory free: %lu bytes", ESP.getFreeHeap());
 
+    // Get camera instance first
     camera = CameraManager::getInstance().getCamera();
     if (!camera)
     {
@@ -24,9 +42,15 @@ bool PreviewService::begin()
     }
 
     ESP_LOGD(TAG, "Camera instance acquired successfully");
+    
+    // Configure camera for preview mode
+    if (!CameraManager::getInstance().begin(true)) // true for preview mode
+    {
+        ESP_LOGE(TAG, "Failed to initialize camera in preview mode");
+        return false;
+    }
 
     ESP_LOGI(TAG, "=== PreviewService Ready ===");
-    ESP_LOGV(TAG, "Final memory free: %lu bytes", ESP.getFreeHeap());
     return true;
 }
 
@@ -53,9 +77,12 @@ bool PreviewService::initMJPEGServer()
 {
     ESP_LOGD(TAG, "Initializing MJPEG server...");
 
-    // Configure camera for streaming
+    // Ensure camera is in preview mode
     camera->resolution.vga();
     camera->quality.high();
+    camera->pixformat.jpeg();  // Explicitly set JPEG format
+    
+    delay(100); // Small delay to ensure camera settings are applied
     
     if (!mjpeg.begin().isOk())
     {
@@ -65,103 +92,93 @@ bool PreviewService::initMJPEGServer()
 
     streamAddress = mjpeg.address();
     ESP_LOGI(TAG, "Stream available at: %s", streamAddress.c_str());
-    ESP_LOGV(TAG, "Server metrics - Heap: %lu, PSRAM: %lu", ESP.getFreeHeap(), ESP.getFreePsram());
-
     return true;
+}
+
+void PreviewService::loop()
+{
+    static bool lastState = false;
+    static unsigned long lastMetricsLog = 0;
+    const unsigned long METRICS_INTERVAL = 30000;
+
+    // Handle state changes
+    if (streamEnabled != lastState) {
+        ESP_LOGI(TAG, "Stream state changed: %s", streamEnabled ? "ENABLED" : "DISABLED");
+        
+        if (streamEnabled) {
+            // Initialize camera first if needed
+            if (!camera && !begin()) {
+                ESP_LOGE(TAG, "Failed to initialize preview service");
+                streamEnabled = false;
+                return;
+            }
+
+            // Initialize WiFi and MJPEG server
+            if (!initWiFi()) {
+                ESP_LOGE(TAG, "Failed to start WiFi AP");
+                streamEnabled = false;
+                return;
+            }
+
+            if (!initMJPEGServer()) {
+                ESP_LOGE(TAG, "Failed to start MJPEG server");
+                stopWiFi();
+                streamEnabled = false;
+                return;
+            }
+
+            // Update BLE with stream info
+            JsonDocument doc;
+            doc["status"] = "enabled";
+            doc["wifi"]["ssid"] = String(HOSTNAME);
+            doc["wifi"]["ip"] = WiFi.softAPIP().toString();
+            doc["stream"]["url"] = String(streamAddress);
+            doc["stream"]["type"] = "MJPEG";
+            doc["stream"]["port"] = 81;
+
+            String output;
+            serializeJson(doc, output);
+            bleService->updatePreviewInfo(output.c_str());
+
+            ESP_LOGI(TAG, "Preview service enabled successfully");
+        } else {
+            disable();
+        }
+        
+        lastState = streamEnabled;
+    }
+
+    // Only process stream if enabled
+    if (streamEnabled) {
+        // Handle metrics logging
+        if (millis() - lastMetricsLog > METRICS_INTERVAL) {
+            JsonDocument doc;
+            doc["clients"] = WiFi.softAPgetStationNum();
+            doc["heap"] = ESP.getFreeHeap();
+            doc["psram"] = ESP.getFreePsram();
+
+            std::string metrics;
+            serializeJsonPretty(doc, metrics);
+            bleService->updateServiceMetrics("preview", metrics);
+            lastMetricsLog = millis();
+        }
+    }
 }
 
 void PreviewService::enable()
 {
     static unsigned long lastEnableAttempt = 0;
-    const unsigned long DEBOUNCE_TIME = 1000; // 1 second debounce
+    const unsigned long DEBOUNCE_TIME = 1000;
     
     unsigned long currentTime = millis();
-    
-    // Add timing check to prevent rapid repeated calls
     if (currentTime - lastEnableAttempt < DEBOUNCE_TIME) {
-        ESP_LOGW(TAG, "Enable request ignored - too soon after last attempt (%lu ms)", 
-                 currentTime - lastEnableAttempt);
+        ESP_LOGW(TAG, "Enable request ignored - too soon after last attempt");
         return;
     }
-    
     lastEnableAttempt = currentTime;
     
-    // Check if already enabled
-    if (streamEnabled)
-    {
-        ESP_LOGW(TAG, "Stream already enabled - state: %d", streamEnabled);
-        return;
-    }
-
-    ESP_LOGI(TAG, "Enabling preview stream");
-    
-    // Set flag first to prevent re-entrancy
+    // Just set the flag, let loop() handle the initialization
     streamEnabled = true;
-
-    if (!initWiFi())
-    {
-        ESP_LOGE(TAG, "Failed to start WiFi AP");
-        streamEnabled = false;  // Reset flag on failure
-        return;
-    }
-
-    if (!initMJPEGServer())
-    {
-        ESP_LOGE(TAG, "Failed to start MJPEG server");
-        stopWiFi();
-        streamEnabled = false;  // Reset flag on failure
-        return;
-    }
-
-    // Create custom allocator for PSRAM
-    struct PsramAllocator : ArduinoJson::Allocator
-    {
-        void *allocate(size_t size)
-        {
-            return heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
-        }
-
-        void deallocate(void *ptr)
-        {
-            heap_caps_free(ptr);
-        }
-
-        void *reallocate(void *ptr, size_t new_size)
-        {
-            return heap_caps_realloc(ptr, new_size, MALLOC_CAP_SPIRAM);
-        }
-    };
-
-    // Create document with PSRAM allocator
-    PsramAllocator allocator;
-    JsonDocument doc(&allocator);
-
-    // Basic status
-    doc["status"] = "enabled";
-
-    // WiFi information using to<JsonObject>()
-    JsonObject wifi = doc["wifi"].to<JsonObject>();
-    wifi["ssid"] = String(HOSTNAME);
-    wifi["ip"] = WiFi.softAPIP().toString();
-    wifi["channel"] = WiFi.channel();
-
-    // Stream information using to<JsonObject>()
-    JsonObject stream = doc["stream"].to<JsonObject>();
-    stream["url"] = String(streamAddress);
-    stream["type"] = "MJPEG";
-    stream["port"] = 81;
-
-    // Debug log before serialization
-    String debugOutput;
-    serializeJsonPretty(doc, debugOutput);
-    ESP_LOGD(TAG, "Preview info to send: %s", debugOutput.c_str());
-
-    // Convert to string for BLE
-    String output;
-    serializeJson(doc, output);
-    bleService->updatePreviewInfo(output.c_str());
-
-    ESP_LOGV(TAG, "State transition: disabled -> enabled");
 }
 
 void PreviewService::disable()
@@ -174,18 +191,28 @@ void PreviewService::disable()
         return;
     }
 
-    ESP_LOGV(TAG, "State transition: %d -> 0", streamEnabled);
+    // Set flag first to prevent re-entrancy
+    streamEnabled = false;
+    ESP_LOGV(TAG, "State transition: enabled -> disabled");
 
+    // Stop services in order
     stopMJPEGServer();
     stopWiFi();
-    streamEnabled = false;
+
+    // Reset camera mode
+    if (camera) {
+        CameraManager::getInstance().begin(false); // false for normal mode
+    }
 
     JsonDocument doc;
-    doc["status"] = "Preview service not enabled";
+    doc["status"] = "disabled";
+    doc["message"] = "Preview service stopped";
 
     std::string infoJson;
     serializeJsonPretty(doc, infoJson);
     bleService->updatePreviewInfo(infoJson);
+    
+    ESP_LOGI(TAG, "Preview service disabled successfully");
 }
 
 void PreviewService::stopWiFi()
@@ -199,39 +226,4 @@ void PreviewService::stopMJPEGServer()
 {
     ESP_LOGD(TAG, "Stopping MJPEG server");
     mjpeg.stop();
-}
-
-void PreviewService::loop()
-{
-    static bool lastState = false;
-    static unsigned long lastMetricsLog = 0;
-    const unsigned long METRICS_INTERVAL = 30000; // Log metrics every 30 seconds
-
-    // Log state changes
-    if (streamEnabled != lastState)
-    {
-        ESP_LOGI(TAG, "Stream state changed: %s", streamEnabled ? "ENABLED" : "DISABLED");
-        ESP_LOGD(TAG, "Connected clients: %d", WiFi.softAPgetStationNum());
-        lastState = streamEnabled;
-    }
-
-    // Periodic metrics logging
-    if (streamEnabled && millis() - lastMetricsLog > METRICS_INTERVAL)
-    {
-        ESP_LOGD(TAG, "Stream metrics - Clients: %d, Heap: %lu, PSRAM: %lu",
-                 WiFi.softAPgetStationNum(),
-                 ESP.getFreeHeap(),
-                 ESP.getFreePsram());
-
-        JsonDocument doc;
-        doc["clients"] = WiFi.softAPgetStationNum();
-        doc["heap"] = ESP.getFreeHeap();
-        doc["psram"] = ESP.getFreePsram();
-
-        std::string metrics;
-        serializeJsonPretty(doc, metrics);
-
-        bleService->updateServiceMetrics("preview", metrics);
-        lastMetricsLog = millis();
-    }
 }

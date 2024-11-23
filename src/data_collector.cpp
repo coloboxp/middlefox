@@ -102,6 +102,26 @@ DataCollector::DataCollector(CustomBLEService *ble) : bleService(ble)
     imageCount = 0;
     camera = nullptr;
     cameraMutex = xSemaphoreCreateMutex();
+    
+    bleService->setOperationCallback([this](bool enabled) {
+        ESP_LOGI(TAG, "Data collection callback triggered: %s", enabled ? "START" : "STOP");
+        if (enabled) {
+            if (!camera && !begin()) {
+                ESP_LOGE(TAG, "Failed to initialize data collector");
+                return;
+            }
+            // Start capturing
+            lastCapture = 0;  // Force immediate first capture
+        } else {
+            // Stop capturing and check for restart
+            if (!bleService->isPreviewEnabled() && !bleService->isCaptureEnabled()) {
+                ESP_LOGI(TAG, "All services stopped - Triggering restart");
+                bleService->notifyClients("Restarting device to idle state...");
+                delay(1000);
+                ESP.restart();
+            }
+        }
+    });
 }
 
 DataCollector::~DataCollector() {
@@ -120,39 +140,22 @@ bool DataCollector::begin()
 {
     ESP_LOGI(TAG, "=== Starting DataCollector Initialization ===");
     
-    if (!cameraMutex) {
-        ESP_LOGE(TAG, "Failed to create camera mutex");
-        return false;
-    }
-
     // Initialize SD card first
     if (!initSD()) {
         ESP_LOGE(TAG, "SD Card initialization failed");
         return false;
     }
 
-    // Get camera instance with mutex protection
-    if (xSemaphoreTake(cameraMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-        camera = CameraManager::getInstance().getCamera();
-        if (!camera) {
-            ESP_LOGE(TAG, "Failed to get camera instance");
-            xSemaphoreGive(cameraMutex);
-            return false;
-        }
+    // Get camera instance and configure for capture mode
+    camera = CameraManager::getInstance().getCamera();
+    if (!camera) {
+        ESP_LOGE(TAG, "Failed to get camera instance");
+        return false;
+    }
 
-        // Configure camera
-        camera->resolution.vga();
-        camera->quality.high();
-        
-        if (!camera->begin().isOk()) {
-            ESP_LOGE(TAG, "Camera initialization failed: %s", 
-                    camera->exception.toString().c_str());
-            xSemaphoreGive(cameraMutex);
-            return false;
-        }
-        xSemaphoreGive(cameraMutex);
-    } else {
-        ESP_LOGE(TAG, "Failed to acquire camera mutex");
+    // Configure camera for capture mode (not preview)
+    if (!CameraManager::getInstance().begin(false)) {
+        ESP_LOGE(TAG, "Failed to initialize camera in capture mode");
         return false;
     }
 
@@ -166,34 +169,28 @@ bool DataCollector::begin()
 
 void DataCollector::loop()
 {
-    if (!bleService || !bleService->isCaptureEnabled()) {
+    if (!bleService->isCaptureEnabled()) {
         return;
     }
 
-    if (!camera || !cameraMutex) {
-        ESP_LOGE(TAG, "Camera or mutex not initialized");
+    if (!camera) {
+        ESP_LOGE(TAG, "Camera not initialized");
         return;
     }
 
     unsigned long currentTime = millis();
     if (currentTime - lastCapture >= CAPTURE_INTERVAL_MS) {
-        if (xSemaphoreTake(cameraMutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
-            ESP_LOGE(TAG, "Failed to acquire camera mutex");
-            return;
-        }
-
         ESP_LOGD(TAG, "=== Starting New Capture Cycle ===");
 
-        digitalWrite(LED_BUILTIN, LOW); // Turn ON
+        // Visual feedback
+        digitalWrite(LED_BUILTIN, LOW);  // Turn ON
         delay(100);
         digitalWrite(LED_BUILTIN, HIGH); // Turn OFF
 
-        if (!camera->capture().isOk())
-        {
+        if (!camera->capture().isOk()) {
             std::string errorMsg = "Capture failed: ";
             errorMsg += camera->exception.toString().c_str();
             bleService->updateServiceStatus("collector", errorMsg);
-            xSemaphoreGive(cameraMutex);
             return;
         }
 
@@ -202,14 +199,11 @@ void DataCollector::loop()
         // Save RGB565 raw data
         String rgb_path = "/picture" + String(imageCount) + ".rgb";
         File rgb_file = SD.open(rgb_path.c_str(), FILE_WRITE);
-        if (rgb_file)
-        {
+        if (rgb_file) {
             size_t bytesWritten = rgb_file.write(camera->frame->buf, camera->frame->len);
             rgb_file.close();
             ESP_LOGI(TAG, "RGB file saved: %s (Size: %u bytes)", rgb_path.c_str(), bytesWritten);
-        }
-        else
-        {
+        } else {
             ESP_LOGE(TAG, "Failed to create RGB file: %s", rgb_path.c_str());
         }
 
@@ -217,42 +211,34 @@ void DataCollector::loop()
         uint8_t *jpg_buf = NULL;
         size_t jpg_len = 0;
         bool converted = convert_rgb565_to_jpeg(camera->frame->buf, camera->frame->width,
-                                                camera->frame->height, &jpg_buf, &jpg_len);
+                                              camera->frame->height, &jpg_buf, &jpg_len);
 
-        if (converted)
-        {
+        if (converted) {
             String jpg_path = "/picture" + String(imageCount) + ".jpg";
             File jpg_file = SD.open(jpg_path.c_str(), FILE_WRITE);
-            if (jpg_file)
-            {
+            if (jpg_file) {
                 jpg_file.write(jpg_buf, jpg_len);
                 jpg_file.close();
                 ESP_LOGI(TAG, "Saved JPG file: %s", jpg_path.c_str());
                 imageCount++;
-            }
-            else
-            {
+            } else {
                 ESP_LOGE(TAG, "Failed to create JPG file: %s", jpg_path.c_str());
             }
             free(jpg_buf);
         }
 
-        ESP_LOGV(TAG, "LED OFF - Capture complete");
-
         lastCapture = currentTime;
         ESP_LOGI(TAG, "=== Capture Cycle Complete ===");
         ESP_LOGD(TAG, "Total images captured: %d", imageCount);
-        ESP_LOGV(TAG, "Next capture in %d ms", CAPTURE_INTERVAL_MS);
 
-        // Add more detailed status updates
+        // Update metrics
         JsonDocument doc;
         doc["image_count"] = imageCount;
         doc["last_capture"] = millis() - lastCapture;
+        doc["next_capture"] = CAPTURE_INTERVAL_MS - (millis() - lastCapture);
 
         std::string metrics;
         serializeJsonPretty(doc, metrics);
         bleService->updateServiceMetrics("collector", metrics);
-
-        xSemaphoreGive(cameraMutex);
     }
 }
