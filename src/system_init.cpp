@@ -20,18 +20,8 @@ bool SystemInitializer::initializeBuzzer()
 
 bool SystemInitializer::initializeDisplay()
 {
-    try
-    {
-        u8g2.begin();
-        DisplayManager::getInstance().begin(&u8g2);
-        ESP_LOGI(TAG, "Display initialized successfully");
-        return true;
-    }
-    catch (const std::exception &e)
-    {
-        ESP_LOGE(TAG, "Display initialization failed: %s", e.what());
-        return false;
-    }
+    ESP_LOGI(TAG, "Initializing display...");
+    return DisplayManager::getInstance().begin();
 }
 
 bool SystemInitializer::initializeBLE()
@@ -56,6 +46,32 @@ void SystemInitializer::playStartupSequence()
 
 void SystemInitializer::showStartupIcons()
 {
-    display.print("Starting...");
-    display.refresh();
+    ESP_LOGI(TAG, "Showing startup icons...");
+    
+    // Get display instance safely
+    auto& display = DisplayManager::getInstance();
+    if (!display.isInitialized()) {
+        ESP_LOGE(TAG, "Display not initialized!");
+        return;
+    }
+
+    // Add delay to ensure display is ready
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    try {
+        display.clear();    
+        
+        // Print version info with bounds checking
+        const char* version = "v1.0.0";  // or whatever your version is
+        if (version && strlen(version) < 32) {  // sanity check
+            display.print(version);
+        }
+
+        // Update display
+        display.refresh();
+        
+        ESP_LOGI(TAG, "Startup icons shown successfully");
+    } catch (const std::exception& e) {
+        ESP_LOGE(TAG, "Error showing startup icons: %s", e.what());
+    }
 }

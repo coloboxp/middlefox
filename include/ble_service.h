@@ -12,12 +12,39 @@
 #define CONTROL_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 #define STATUS_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a9"
 #define PREVIEW_INFO_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26aa"
-#define SERVICE_STATUS_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a9"
-#define SERVICE_METRICS_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26aa"
 #define MENU_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26ab"
+#define SERVICE_STATUS_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26ad"
+#define SERVICE_METRICS_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26ac"
+
+#define BLE_LOG_LEVEL ESP_LOG_INFO  // Change to ESP_LOG_DEBUG or ESP_LOG_VERBOSE for more detail
 
 class CustomBLEService;                    // Forward declaration
 extern CustomBLEService *globalBLEService; // Global instance pointer
+
+class ServerCallbacks : public NimBLEServerCallbacks
+{
+private:
+    static const char* TAG;
+public:
+    void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) override;
+    void onDisconnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) override;
+};
+
+class ControlCallbacks : public NimBLECharacteristicCallbacks
+{
+private:
+    static const char* TAG;
+public:
+    void onWrite(NimBLECharacteristic* pCharacteristic) override;
+};
+
+class PreviewInfoCallbacks : public NimBLECharacteristicCallbacks
+{
+private:
+    static const char* TAG;
+public:
+    void onRead(NimBLECharacteristic* pCharacteristic) override;
+};
 
 class CustomBLEService
 {
@@ -76,6 +103,15 @@ public:
     void checkConnectionHealth();
 
 private:
+    static const char* TAG;  // Define if not already defined
+
+    bool createControlCharacteristic();
+    bool createStatusCharacteristic();
+    bool createPreviewCharacteristic();
+    bool createMenuCharacteristic();
+    bool createServiceStatusCharacteristic();
+    bool createServiceMetricsCharacteristic();
+
     static bool captureEnabled;
     static bool previewEnabled;
     static bool inferenceEnabled;

@@ -5,7 +5,7 @@
 namespace Icons
 {
     static const char *TAG = "Icons";
-
+    static constexpr int BITMAP_ARRAY_LEN = 3;
     // 32x32 fox bitmaps (positive)
     static const unsigned char epd_bitmap_fox_32x32_1_p[] PROGMEM = {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x0c, 0x00, 0x01, 0x20, 0x10, 0x00, 0x02, 0xa8, 0x2c,
@@ -104,110 +104,116 @@ namespace Icons
         0x00, 0x00, 0x00, 0x00, 0x02, 0xe2, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x41, 0xc0, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x01, 0xa0, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00};
 
-    // Array definitions - these need to be non-static as they're referenced in the header
-    const int epd_bitmap_foxes_positive_array_LEN = 3;
-    const unsigned char *const epd_bitmap_foxes_positive_array[3] = {
+
+    // Make the arrays static and ensure they're properly initialized
+    alignas(4) const unsigned char *const epd_bitmap_foxes_positive_array[BITMAP_ARRAY_LEN] = {
         epd_bitmap_fox_32x32_1_p,
         epd_bitmap_fox_32x32_2_p,
         epd_bitmap_fox_64x64_1_p};
 
-    const int epd_bitmap_foxes_negative_array_LEN = 3;
-    const unsigned char *const epd_bitmap_foxes_negative_array[3] = {
+    alignas(4) const unsigned char *const epd_bitmap_foxes_negative_array[BITMAP_ARRAY_LEN] = {
         epd_bitmap_fox_32x32_1_n,
         epd_bitmap_fox_32x32_2_n,
         epd_bitmap_fox_64x64_1_n};
 
-    // Helper function to convert to XBM format
-    static IconInfo convertToXBM(const IconInfo *originalIcon)
-    {
-        if (!originalIcon || !originalIcon->data)
-        {
-            ESP_LOGE(TAG, "Invalid input for XBM conversion");
-            return IconInfo{nullptr, originalIcon->size, originalIcon->type,
-                            originalIcon->polarity, 0, 0};
-        }
+    // Public accessors for the array lengths
+    const int epd_bitmap_foxes_positive_array_LEN = BITMAP_ARRAY_LEN;
+    const int epd_bitmap_foxes_negative_array_LEN = BITMAP_ARRAY_LEN;
 
-        size_t bufferSize = (originalIcon->width * originalIcon->height + 7) / 8;
-        unsigned char *convertedData = new unsigned char[bufferSize];
-
-        ESP_LOGD(TAG, "Converting bitmap to XBM format - Size: %dx%d",
-                 originalIcon->width, originalIcon->height);
-
-        for (size_t i = 0; i < bufferSize; i++)
-        {
-            // XBM format requires bits to be reversed within each byte
-            unsigned char byte = originalIcon->data[i];
-            convertedData[i] = ((byte * 0x0802LU & 0x22110LU) |
-                                (byte * 0x8020LU & 0x88440LU)) *
-                                   0x10101LU >>
-                               16;
-        }
-
-        ESP_LOGD(TAG, "XBM conversion successful - Buffer size: %d bytes", bufferSize);
-
-        return IconInfo{
-            convertedData,
-            originalIcon->size,
-            originalIcon->type,
-            originalIcon->polarity,
-            originalIcon->width,
-            originalIcon->height};
-    }
-
-    // Implementation of getIconXBM
     IconInfo getIconXBM(Type type, Polarity polarity)
     {
-        IconInfo originalIcon = {nullptr, Size::SMALL, type, polarity, 32, 32};
+        ESP_LOGD(TAG, "Getting icon XBM - Type: %d, Polarity: %d", 
+                 static_cast<int>(type), static_cast<int>(polarity));
+        
+        // Initialize with safe defaults
+        IconInfo info = {
+            nullptr,              // data
+            Size::SMALL,         // size
+            type,                // type
+            polarity,            // polarity
+            32,                  // width
+            32                   // height
+        };
 
-        int index;
-        switch (type)
-        {
-        case Type::FOX_1:
-            index = 0;
-            break;
-        case Type::FOX_2:
-            index = 1;
-            break;
-        case Type::FOX_3:
-            index = 2;
-            originalIcon.size = Size::LARGE;
-            originalIcon.width = originalIcon.height = 64;
-            break;
-        default:
-            ESP_LOGE(TAG, "Invalid icon type");
-            return originalIcon;
-        }
+        try {
+            // Validate type
+            int index = static_cast<int>(type);
+            ESP_LOGD(TAG, "Icon index: %d", index);
+            
+            if (index < 0 || index >= BITMAP_ARRAY_LEN) {
+                ESP_LOGE(TAG, "Invalid icon type index: %d", index);
+                return info;
+            }
 
-        // Set data based on polarity
-        if (polarity == Polarity::POSITIVE)
-        {
-            if (index < epd_bitmap_foxes_positive_array_LEN)
-            {
-                originalIcon.data = epd_bitmap_foxes_positive_array[index];
+            // Get source data with bounds checking
+            const unsigned char* sourceData = nullptr;
+            if (polarity == Polarity::POSITIVE && epd_bitmap_foxes_positive_array != nullptr) {
+                ESP_LOGD(TAG, "Getting positive icon data");
+                sourceData = epd_bitmap_foxes_positive_array[index];
+            } else if (epd_bitmap_foxes_negative_array != nullptr) {
+                ESP_LOGD(TAG, "Getting negative icon data");
+                sourceData = epd_bitmap_foxes_negative_array[index];
+            }
+
+            if (!sourceData) {
+                ESP_LOGE(TAG, "Source data is null");
+                return info;
+            }
+
+            // Set dimensions based on type
+            if (type == Type::FOX_3) {
+                info.size = Size::LARGE;
+                info.width = info.height = static_cast<u8g2_uint_t>(Size::LARGE);
+            } else {
+                info.width = info.height = static_cast<u8g2_uint_t>(Size::SMALL);
+            }
+
+            // Calculate buffer size
+            size_t bufferSize = (info.width * info.height + 7) / 8;
+            ESP_LOGD(TAG, "Allocating buffer of size: %u", bufferSize);
+
+            // Allocate memory with error checking
+            unsigned char* convertedData = nullptr;
+            try {
+                convertedData = new unsigned char[bufferSize];
+                if (!convertedData) {
+                    ESP_LOGE(TAG, "Memory allocation failed");
+                    return info;
+                }
+            } catch (const std::bad_alloc& e) {
+                ESP_LOGE(TAG, "Memory allocation exception: %s", e.what());
+                return info;
+            }
+
+            // Initialize buffer to zero
+            memset(convertedData, 0, bufferSize);
+
+            // Convert to XBM format with bounds checking
+            ESP_LOGD(TAG, "Converting to XBM format");
+            for (size_t i = 0; i < bufferSize; i++) {
+                unsigned char byte = pgm_read_byte(&sourceData[i]);
+                convertedData[i] = ((byte * 0x0802LU & 0x22110LU) | 
+                                  (byte * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16;
+            }
+
+            info.data = convertedData;
+            ESP_LOGD(TAG, "XBM conversion successful");
+
+        } catch (const std::exception& e) {
+            ESP_LOGE(TAG, "Exception in getIconXBM: %s", e.what());
+            if (info.data) {
+                delete[] info.data;
+                info.data = nullptr;
             }
         }
-        else
-        {
-            if (index < epd_bitmap_foxes_negative_array_LEN)
-            {
-                originalIcon.data = epd_bitmap_foxes_negative_array[index];
-            }
-        }
 
-        if (!originalIcon.data)
-        {
-            ESP_LOGE(TAG, "Failed to get icon data for type %d", static_cast<int>(type));
-            return originalIcon;
-        }
-
-        return convertToXBM(&originalIcon);
+        return info;
     }
 
-    // Implementation of freeXBMData
     void freeXBMData(const IconInfo &icon)
     {
-        ESP_LOGD(TAG, "Freeing XBM converted data");
-        if (icon.data != nullptr)
+        ESP_LOGD(TAG, "Freeing XBM data");
+        if (icon.data)
         {
             delete[] icon.data;
             ESP_LOGD(TAG, "XBM data freed successfully");

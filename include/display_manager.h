@@ -3,23 +3,24 @@
 #include "U8g2lib.h"
 #include "xbm_icon.h"
 #include "config.h"
+#include "esp_log.h"
 
-class DisplayManager
-{
+class DisplayManager {
 private:
     static const char *TAG;
-    static DisplayManager *instance;
-
+    static DisplayManager* instance;
     DISPLAY_MODEL *display;
-    bool isInitialized;
+    bool initialized;
 
-    // Private constructor
-    DisplayManager() : display(nullptr), isInitialized(false) {}
+    DisplayManager();
+    void setupDefaults();
+    void checkInit();
 
 public:
     static DisplayManager& getInstance();
-
-    bool begin(DISPLAY_MODEL *displayDriver);
+    ~DisplayManager();
+    
+    bool begin();
     void clear();
     void refresh();
     void print(const char *text);
@@ -28,11 +29,9 @@ public:
     void setFont(const uint8_t *font);
     void drawFrame(int x, int y, int width, int height);
     void drawBox(int x, int y, int width, int height);
+
     u8g2_uint_t getDisplayWidth() const;
     u8g2_uint_t getDisplayHeight() const;
-    bool isReady() const { return isInitialized && display != nullptr; }
-
-    // Prevent copying
-    DisplayManager(DisplayManager const&) = delete;
-    void operator=(DisplayManager const&) = delete;
+    bool isInitialized() const { return initialized && display != nullptr; }
+    DISPLAY_MODEL* getDisplay() { return display; }
 };

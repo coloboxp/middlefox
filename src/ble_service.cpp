@@ -2,7 +2,11 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
-static const char *TAG = "BLEService";
+const char *CustomBLEService::TAG = "BLEService";
+const char *ServerCallbacks::TAG = "BLEServer";
+const char *ControlCallbacks::TAG = "BLEControl";
+const char *PreviewInfoCallbacks::TAG = "BLEPreview";
+
 bool CustomBLEService::captureEnabled = false;
 bool CustomBLEService::previewEnabled = false;
 bool CustomBLEService::inferenceEnabled = false;
@@ -11,65 +15,56 @@ CustomBLEService *globalBLEService = nullptr;
 static const unsigned long STATUS_UPDATE_INTERVAL = 5000;  // 5 seconds for general status
 static const unsigned long SERVICE_UPDATE_INTERVAL = 1000; // 1 second for service updates
 
-class ControlCallbacks : public NimBLECharacteristicCallbacks
+void ServerCallbacks::onConnect(NimBLEServer *pServer, ble_gap_conn_desc *desc)
 {
-    void onWrite(NimBLECharacteristic *pCharacteristic)
+    ESP_LOGI(TAG, "Client Connected - Address: %s",
+             NimBLEAddress(desc->peer_ota_addr).toString().c_str());
+    if (globalBLEService)
     {
-        if (globalBLEService)
-        {
-            globalBLEService->handleControlCallback(pCharacteristic);
-        }
+        globalBLEService->updateConnectionState(CustomBLEService::CONNECTED);
     }
-};
+}
 
-class ServerCallbacks : public NimBLEServerCallbacks
+void ServerCallbacks::onDisconnect(NimBLEServer *pServer, ble_gap_conn_desc *desc)
 {
-    void onConnect(NimBLEServer *pServer, ble_gap_conn_desc *desc)
+    if (desc != nullptr)
     {
-        ESP_LOGI(TAG, "Client Connected - Address: %s",
-                 NimBLEAddress(desc->peer_ota_addr).toString().c_str());
-        if (globalBLEService)
-        {
-            globalBLEService->updateConnectionState(CustomBLEService::CONNECTED);
-        }
+        ESP_LOGI(TAG, "Client Disconnected - Details:"
+                      "\n\tPeer Address: %s"
+                      "\n\tConnection Handle: %d"
+                      "\n\tConnection Interval: %d ms"
+                      "\n\tConnection Timeout: %d ms",
+                 NimBLEAddress(desc->peer_ota_addr).toString().c_str(),
+                 desc->conn_handle,
+                 (desc->conn_itvl * 1.25),
+                 (desc->supervision_timeout * 10));
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Client Disconnected - No descriptor available");
     }
 
-    void onDisconnect(NimBLEServer *pServer, ble_gap_conn_desc *desc)
+    if (globalBLEService)
     {
-        if (desc != nullptr)
-        {
-            ESP_LOGI(TAG, "Client Disconnected - Details:"
-                          "\n\tPeer Address: %s"
-                          "\n\tConnection Handle: %d"
-                          "\n\tConnection Interval: %d ms"
-                          "\n\tConnection Timeout: %d ms",
-                     NimBLEAddress(desc->peer_ota_addr).toString().c_str(),
-                     desc->conn_handle,
-                     (desc->conn_itvl * 1.25),          // Convert to milliseconds
-                     (desc->supervision_timeout * 10)); // Convert to milliseconds
-        }
-        else
-        {
-            ESP_LOGI(TAG, "Client Disconnected - No descriptor available");
-        }
-
-        if (globalBLEService)
-        {
-            globalBLEService->updateConnectionState(CustomBLEService::DISCONNECTED);
-            globalBLEService->handleDisconnection();
-        }
-
-        pServer->startAdvertising();
+        globalBLEService->updateConnectionState(CustomBLEService::DISCONNECTED);
+        globalBLEService->handleDisconnection();
     }
-};
 
-class PreviewInfoCallbacks : public NimBLECharacteristicCallbacks
+    pServer->startAdvertising();
+}
+
+void ControlCallbacks::onWrite(NimBLECharacteristic *pCharacteristic)
 {
-    void onRead(NimBLECharacteristic *pCharacteristic)
+    if (globalBLEService)
     {
-        ESP_LOGD("BLEService", "Preview info read: %s", pCharacteristic->getValue().c_str());
+        globalBLEService->handleControlCallback(pCharacteristic);
     }
-};
+}
+
+void PreviewInfoCallbacks::onRead(NimBLECharacteristic *pCharacteristic)
+{
+    // Implementation if needed
+}
 
 CustomBLEService::CustomBLEService()
 {
@@ -142,154 +137,266 @@ void CustomBLEService::handleControlCallback(NimBLECharacteristic *pCharacterist
 
 void CustomBLEService::begin()
 {
+    ESP_LOGI(TAG, "=== Starting BLE Service Initialization ===");
+    ESP_LOGD(TAG, "Taking mutex for initialization...");
+
     if (xSemaphoreTake(mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
     {
-        ESP_LOGE(TAG, "Failed to take mutex in begin()");
+        ESP_LOGE(TAG, "❌ Failed to take mutex in begin() - Timeout after 1000ms");
         return;
     }
 
-    // Add check to prevent double initialization
     static bool initialized = false;
     if (initialized)
     {
-        ESP_LOGW(TAG, "BLE Service already initialized");
+        ESP_LOGW(TAG, "⚠️ BLE Service already initialized");
         xSemaphoreGive(mutex);
         return;
     }
 
-    ESP_LOGI(TAG, "Initializing BLE Service...");
-
-    // Add delay for stable initialization
-    delay(100);
-
+    ESP_LOGI(TAG, "1️⃣ Initializing NimBLE Device...");
     NimBLEDevice::init(HOSTNAME);
+    ESP_LOGD(TAG, "Setting BLE parameters...");
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);
     NimBLEDevice::setSecurityAuth(false, false, true);
     NimBLEDevice::setMTU(185);
 
+    ESP_LOGI(TAG, "2️⃣ Creating BLE Server...");
     pServer = NimBLEDevice::createServer();
+    if (!pServer)
+    {
+        ESP_LOGE(TAG, "❌ Failed to create BLE server");
+        xSemaphoreGive(mutex);
+        return;
+    }
     pServer->setCallbacks(new ServerCallbacks());
-    // Create service FIRST
-    NimBLEService *pService = pServer->createService(SERVICE_UUID);
 
-    // Create all characteristics
+    ESP_LOGI(TAG, "3️⃣ Creating BLE Service...");
+    pService = pServer->createService(SERVICE_UUID);
+    if (!pService)
+    {
+        ESP_LOGE(TAG, "❌ Failed to create BLE service");
+        xSemaphoreGive(mutex);
+        return;
+    }
+
+    ESP_LOGI(TAG, "4️⃣ Creating Characteristics...");
+
+    // Control Characteristic
+    ESP_LOGD(TAG, "Creating Control characteristic...");
     pControlCharacteristic = pService->createCharacteristic(
         CONTROL_CHAR_UUID,
         NIMBLE_PROPERTY::WRITE);
+    if (!pControlCharacteristic)
+    {
+        ESP_LOGE(TAG, "❌ Failed to create Control characteristic");
+        xSemaphoreGive(mutex);
+        return;
+    }
     pControlCharacteristic->setCallbacks(new ControlCallbacks());
 
-    // Menu characteristic
+    // Status Characteristic
+    ESP_LOGD(TAG, "Creating Status characteristic...");
+    pStatusCharacteristic = pService->createCharacteristic(
+        STATUS_CHAR_UUID,
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+    if (!pStatusCharacteristic)
+    {
+        ESP_LOGE(TAG, "❌ Failed to create Status characteristic");
+        xSemaphoreGive(mutex);
+        return;
+    }
+
+    // Preview Info Characteristic
+    ESP_LOGD(TAG, "Creating Preview Info characteristic...");
+    pPreviewInfoCharacteristic = pService->createCharacteristic(
+        PREVIEW_INFO_CHAR_UUID,
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+    if (!pPreviewInfoCharacteristic)
+    {
+        ESP_LOGE(TAG, "❌ Failed to create Preview Info characteristic");
+        xSemaphoreGive(mutex);
+        return;
+    }
+
+    // Menu Characteristic
+    ESP_LOGD(TAG, "Creating Menu characteristic...");
     NimBLECharacteristic *pMenuCharacteristic = pService->createCharacteristic(
         MENU_CHAR_UUID,
         NIMBLE_PROPERTY::READ);
+    if (!pMenuCharacteristic)
+    {
+        ESP_LOGE(TAG, "❌ Failed to create Menu characteristic");
+        xSemaphoreGive(mutex);
+        return;
+    }
     std::string commandDescription =
         "Available Commands:\n"
         "1: Start Preview\n"
         "2: Stop Preview\n"
-        "3: Start Data Collection\n"
-        "4: Stop Data Collection\n"
+        "3: Start Operation\n"
+        "4: Stop Operation\n"
         "5: Start Inference\n"
         "6: Stop Inference";
     pMenuCharacteristic->setValue(commandDescription);
 
-    // Status characteristic
-    pStatusCharacteristic = pService->createCharacteristic(
-        STATUS_CHAR_UUID,
-        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
-
-    // Preview info characteristic
-    pPreviewInfoCharacteristic = pService->createCharacteristic(
-        PREVIEW_INFO_CHAR_UUID,
-        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
-
-    // Service Status characteristic
+    // Service Status Characteristic
+    ESP_LOGD(TAG, "Creating Service Status characteristic...");
     pServiceStatusCharacteristic = pService->createCharacteristic(
         SERVICE_STATUS_CHAR_UUID,
         NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+    if (!pServiceStatusCharacteristic)
+    {
+        ESP_LOGE(TAG, "❌ Failed to create Service Status characteristic");
+        xSemaphoreGive(mutex);
+        return;
+    }
 
-    // Service Metrics characteristic
+    // Service Metrics Characteristic
+    ESP_LOGD(TAG, "Creating Service Metrics characteristic...");
     pServiceMetricsCharacteristic = pService->createCharacteristic(
         SERVICE_METRICS_CHAR_UUID,
         NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
-
-    // Set initial values and start service
-    if (!pPreviewInfoCharacteristic)
+    if (!pServiceMetricsCharacteristic)
     {
-        ESP_LOGE(TAG, "Failed to create preview info characteristic!");
+        ESP_LOGE(TAG, "❌ Failed to create Service Metrics characteristic");
         xSemaphoreGive(mutex);
         return;
     }
 
-    JsonDocument doc;
-    doc["status"] = "Preview service not enabled";
-    std::string initialValue;
-    serializeJsonPretty(doc, initialValue);
-    pPreviewInfoCharacteristic->setValue(initialValue);
-    pPreviewInfoCharacteristic->setCallbacks(new PreviewInfoCallbacks());
-
-    // Start the service BEFORE advertising
+    ESP_LOGI(TAG, "5️⃣ Starting BLE Service...");
     if (!pService->start())
     {
-        ESP_LOGE(TAG, "Failed to start BLE service!");
+        ESP_LOGE(TAG, "❌ Failed to start BLE service");
         xSemaphoreGive(mutex);
         return;
     }
 
-    // Configure and start advertising LAST
+    ESP_LOGI(TAG, "6️⃣ Starting Advertising...");
     NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
     pAdvertising->setScanResponse(true);
-    pAdvertising->setMinInterval(0x20);
-    pAdvertising->setMaxInterval(0x40);
-    pAdvertising->setMinPreferred(0x0);
-    pAdvertising->setMaxPreferred(0x0);
+    pAdvertising->setMinPreferred(0x06);
+    pAdvertising->setMaxPreferred(0x12);
 
-    if (!pAdvertising->start(0))
+    if (!pAdvertising->start())
     {
-        ESP_LOGE(TAG, "Failed to start advertising!");
+        ESP_LOGE(TAG, "❌ Failed to start advertising");
         xSemaphoreGive(mutex);
         return;
     }
 
-    ESP_LOGI(TAG, "BLE Service Started Successfully - Device Name: %s", HOSTNAME);
-    xSemaphoreGive(mutex);
-
     initialized = true;
+    ESP_LOGI(TAG, "✅ BLE Service Started Successfully - Device Name: %s", HOSTNAME);
+    ESP_LOGI(TAG, "=== BLE Service Initialization Complete ===");
+
+    xSemaphoreGive(mutex);
+}
+
+bool CustomBLEService::createControlCharacteristic()
+{
+    pControlCharacteristic = pService->createCharacteristic(
+        CONTROL_CHAR_UUID,
+        NIMBLE_PROPERTY::WRITE);
+    if (!pControlCharacteristic)
+        return false;
+    pControlCharacteristic->setCallbacks(new ControlCallbacks());
+    return true;
+}
+
+bool CustomBLEService::createStatusCharacteristic()
+{
+    pStatusCharacteristic = pService->createCharacteristic(
+        STATUS_CHAR_UUID,
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+    return pStatusCharacteristic != nullptr;
+}
+
+bool CustomBLEService::createPreviewCharacteristic()
+{
+    pPreviewInfoCharacteristic = pService->createCharacteristic(
+        PREVIEW_INFO_CHAR_UUID,
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+    if (!pPreviewInfoCharacteristic)
+        return false;
+    pPreviewInfoCharacteristic->setCallbacks(new PreviewInfoCallbacks());
+    return true;
+}
+
+bool CustomBLEService::createMenuCharacteristic()
+{
+    auto pMenuChar = pService->createCharacteristic(
+        MENU_CHAR_UUID,
+        NIMBLE_PROPERTY::READ);
+    if (!pMenuChar)
+        return false;
+
+    std::string commandDescription =
+        "Available Commands:\n"
+        "1: Start Preview\n"
+        "2: Stop Preview\n"
+        "3: Start Operation\n"
+        "4: Stop Operation\n"
+        "5: Start Inference\n"
+        "6: Stop Inference";
+    pMenuChar->setValue(commandDescription);
+    return true;
+}
+
+bool CustomBLEService::createServiceStatusCharacteristic()
+{
+    pServiceStatusCharacteristic = pService->createCharacteristic(
+        SERVICE_STATUS_CHAR_UUID,
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+    return pServiceStatusCharacteristic != nullptr;
+}
+
+bool CustomBLEService::createServiceMetricsCharacteristic()
+{
+    pServiceMetricsCharacteristic = pService->createCharacteristic(
+        SERVICE_METRICS_CHAR_UUID,
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+    return pServiceMetricsCharacteristic != nullptr;
 }
 
 void CustomBLEService::loop()
 {
     static unsigned long lastCheck = 0;
-    const unsigned long CHECK_INTERVAL = 5000; // Check every 5 seconds
+    const unsigned long CHECK_INTERVAL = 5000;
 
     if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE)
     {
         unsigned long now = millis();
 
-        // Periodic connection check
         if (now - lastCheck >= CHECK_INTERVAL)
         {
             lastCheck = now;
+            ESP_LOGV(TAG, "Performing connection check...");
 
             if (isConnected() && !pServer->getConnectedCount())
             {
-                ESP_LOGW(TAG, "Connection state mismatch detected");
+                ESP_LOGW(TAG, "⚠️ Connection state mismatch detected");
+                ESP_LOGD(TAG, "Internal state: Connected, Server count: 0");
                 updateConnectionState(DISCONNECTED);
                 handleDisconnection();
             }
         }
 
-        // Keep-alive mechanism
         if (isConnected() && (now - lastKeepAlive >= KEEPALIVE_INTERVAL))
         {
             lastKeepAlive = now;
+            ESP_LOGV(TAG, "Sending keepalive...");
             notifyClients("keepalive");
         }
 
         xSemaphoreGive(mutex);
     }
+    else
+    {
+        ESP_LOGW(TAG, "⚠️ Failed to take mutex in loop()");
+    }
 
-    vTaskDelay(pdMS_TO_TICKS(10)); // Shorter delay for better responsiveness
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 void CustomBLEService::notifyClients(const std::string &message)

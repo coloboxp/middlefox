@@ -45,28 +45,15 @@ namespace Icons {
 class XBMIcon
 {
 private:
-    Icons::IconInfo icon;
+    const uint8_t* data;
+    u8g2_uint_t w;
+    u8g2_uint_t h;
 
 public:
-    XBMIcon(Icons::Type type, Icons::Polarity polarity = Icons::Polarity::POSITIVE)
-    {
-        icon = Icons::getIconXBM(type, polarity);
-    }
+    XBMIcon(const uint8_t* _data, u8g2_uint_t _width, u8g2_uint_t _height)
+        : data(_data), w(_width), h(_height) {}
 
-    ~XBMIcon()
-    {
-        if (icon.data)
-        {
-            Icons::freeXBMData(icon);
-        }
-    }
-
-    // Prevent copying
-    XBMIcon(const XBMIcon &) = delete;
-    XBMIcon &operator=(const XBMIcon &) = delete;
-
-    bool isValid() const { return icon.data != nullptr; }
-    const unsigned char *data() const { return icon.data; }
-    u8g2_uint_t width() const { return icon.width; }
-    u8g2_uint_t height() const { return icon.height; }
+    u8g2_uint_t width() const { return w; }
+    u8g2_uint_t height() const { return h; }
+    const uint8_t* getData() const { return data; }
 };

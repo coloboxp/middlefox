@@ -129,11 +129,20 @@ bool DataCollector::begin()
     imageCount = getNextImageCount();
     ESP_LOGI(TAG, "Image counter initialized. Starting from: %d", imageCount);
 
-    // Get camera instance
+    // Get camera instance and initialize it
     camera = CameraManager::getInstance().getCamera();
     if (!camera)
     {
         ESP_LOGE(TAG, "Failed to get camera instance");
+        return false;
+    }
+
+    // Configure camera for capture
+    camera->resolution.vga();
+    camera->quality.high();
+    
+    if (!camera->begin().isOk()) {
+        ESP_LOGE(TAG, "Camera initialization failed: %s", camera->exception.toString().c_str());
         return false;
     }
 
@@ -143,6 +152,11 @@ bool DataCollector::begin()
 
 void DataCollector::loop()
 {
+    // Only proceed if capture mode is enabled via BLE
+    if (!bleService || !bleService->captureEnabled) {
+        return;
+    }
+
     unsigned long currentTime = millis();
 
     if (currentTime - lastCapture >= CAPTURE_INTERVAL_MS)
@@ -158,8 +172,6 @@ void DataCollector::loop()
             std::string errorMsg = "Capture failed: ";
             errorMsg += camera->exception.toString().c_str();
             bleService->updateServiceStatus("collector", errorMsg);
-            ESP_LOGE(TAG, "Camera capture failed: %s", camera->exception.toString().c_str());
-            lastCapture = currentTime;
             return;
         }
 
