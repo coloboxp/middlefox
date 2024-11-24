@@ -33,7 +33,10 @@ private:
     uint8_t is_redraw;
     bool menuActive;
 
-    static const uint8_t MENU_ITEMS = 4;
-    static const char *menuItems[MENU_ITEMS];
+    static const uint8_t MENU_ITEMS = 5;
+    static const char* const menuItems[MENU_ITEMS];
+    static const char* const stopMenuItems[2];
+    static const uint8_t STOP_MENU_ITEMS_COUNT;
+
     static MenuHandler *instance;
 };

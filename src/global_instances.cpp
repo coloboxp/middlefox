@@ -11,6 +11,7 @@ ModelInference inference;
 
 DISPLAY_MODEL u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE, /* clock=*/SCL, /* data=*/SDA);
 
-// Define global display and buzzer references
+// Define global references
 DisplayManager &display = DisplayManager::getInstance();
 BuzzerManager &buzzer = BuzzerManager::getInstance();
+RTCManager &rtc = RTCManager::getInstance();

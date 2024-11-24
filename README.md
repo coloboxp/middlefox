@@ -19,10 +19,10 @@ A smart camera-based lane assistance system designed to help foxes stay centered
   - U8G2-based graphics with optimized buffer management
   - Efficient XBM icon caching and rendering
   - Small font (4x6) for maximum information display
-  - Single-button menu interface:
+  - Single-button menu interface with BLE integration:
     - Long press: Toggle menu
     - Click: Navigate items
-    - Double click: Select item
+    - Long press on item: Execute command through BLE service
   - Status information:
     - Version and build info
     - BLE connection status
@@ -43,6 +43,11 @@ A smart camera-based lane assistance system designed to help foxes stay centered
 - Active Buzzer
 - SD Card (for data collection)
 - LED (status indicator)
+- PCF8563 RTC Module (I2C)
+  - Real-time clock functionality
+  - Time persistence during power loss
+  - WiFi-based time synchronization
+  - Formatted time display
 
 ### Pin Configuration
 
@@ -118,6 +123,11 @@ lib_deps =
 - **DataCollector**: Image capture/storage
 - **DisplayManager**: UI rendering
 - **BuzzerManager**: Audio feedback
+- **RTCManager**: Time management
+  - WiFi time synchronization
+  - Persistent time storage
+  - Formatted time display
+  - Global singleton access
 
 ### Task Management
 

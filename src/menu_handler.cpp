@@ -1,15 +1,25 @@
 #include "menu_handler.h"
 #include "global_instances.h"
 #include "Version.h"
+#include "wifi_config_handler.h"
 
 const char *TAG = "MenuHandler";
 
 MenuHandler *MenuHandler::instance = nullptr;
-const char *MenuHandler::menuItems[MENU_ITEMS] = {
+
+// Define the static menu arrays
+const char *const MenuHandler::menuItems[MENU_ITEMS] = {
     "Start Preview",
     "Start Capturing",
     "Start Inferring",
+    "Sync Time (WiFi)",
     "Back"};
+
+const char *const MenuHandler::stopMenuItems[2] = {
+    "Stop Service",
+    "Back"};
+
+const uint8_t MenuHandler::STOP_MENU_ITEMS_COUNT = 2;
 
 MenuHandler::MenuHandler(U8G2 &display) : display(display),
                                           menuPosition(0),
@@ -45,7 +55,7 @@ void MenuHandler::begin()
 
 void MenuHandler::buttonEventHandler(AceButton *button, uint8_t eventType, uint8_t buttonState)
 {
-    ESP_LOGD("MenuHandler", "Raw button event: type=%d state=%d", eventType, buttonState);
+    ESP_LOGV("MenuHandler", "Raw button event: type=%d state=%d", eventType, buttonState);
     if (instance)
     {
         instance->handleEvent(button, eventType, buttonState);
@@ -54,7 +64,7 @@ void MenuHandler::buttonEventHandler(AceButton *button, uint8_t eventType, uint8
 
 void MenuHandler::handleEvent(AceButton *button, uint8_t eventType, uint8_t buttonState)
 {
-    ESP_LOGD("MenuHandler", "Button event received: %d", eventType);
+    ESP_LOGV("MenuHandler", "Button event received: %d", eventType);
 
     switch (eventType)
     {
@@ -67,7 +77,7 @@ void MenuHandler::handleEvent(AceButton *button, uint8_t eventType, uint8_t butt
         }
         else
         {
-            ESP_LOGI("MenuHandler", "Long press detected - executing item %d", menuPosition);
+            ESP_LOGI("MenuHandler", "Long press detected - executing item %d (%s)", menuPosition, menuItems[menuPosition]);
             executeMenuItem();
             is_redraw = true;
         }
@@ -86,27 +96,86 @@ void MenuHandler::handleEvent(AceButton *button, uint8_t eventType, uint8_t butt
 
 void MenuHandler::executeMenuItem()
 {
+    // If any service is active, handle stop action
+    if (bleService.isPreviewEnabled() || bleService.isCaptureEnabled() || bleService.isInferenceEnabled())
+    {
+        if (menuPosition == 0)
+        { // "Stop Service"
+            ESP_LOGI(TAG, "Stopping active service and restarting device");
+
+            // Stop all services
+            if (bleService.isPreviewEnabled())
+            {
+                bleService.handleControlCommand(CustomBLEService::Command::STOP_PREVIEW);
+            }
+            if (bleService.isCaptureEnabled())
+            {
+                bleService.handleControlCommand(CustomBLEService::Command::STOP_DATA_COLLECTION);
+            }
+            if (bleService.isInferenceEnabled())
+            {
+                bleService.handleControlCommand(CustomBLEService::Command::STOP_INFERENCE);
+            }
+
+            // Wait a moment for services to stop
+            delay(1000);
+
+            // Restart device
+            ESP.restart();
+        }
+        menuActive = false;
+        return;
+    }
+
+    // Original menu handling for when no service is active
     switch (menuPosition)
     {
     case 0: // Start Preview
-        ESP_LOGI("MenuHandler", "Starting preview from menu");
+        ESP_LOGI(TAG, "Starting preview from menu");
         bleService.handleControlCommand(CustomBLEService::Command::START_PREVIEW);
         menuActive = false;
         break;
 
     case 1: // Start Capturing
-        collector.begin();
+        ESP_LOGI(TAG, "Starting data collection from menu");
+        bleService.handleControlCommand(CustomBLEService::Command::START_DATA_COLLECTION);
         menuActive = false;
         break;
 
     case 2: // Start Inferring
 #ifdef PRODUCTION_MODE
-        inference.begin();
+        ESP_LOGI(TAG, "Starting inference from menu");
+        bleService.handleControlCommand(CustomBLEService::Command::START_INFERENCE);
 #endif
         menuActive = false;
         break;
 
-    case 3: // Back
+    case 3: // Sync Time (WiFi)
+        ESP_LOGI(TAG, "Starting WiFi time sync");
+        display.clearBuffer();
+        display.setFont(u8g2_font_4x6_tf);
+        display.drawStr(0, 20, "Syncing time...");
+        display.sendBuffer();
+
+        if (WiFiConfigHandler::syncTimeFromWiFi())
+        {
+            display.clearBuffer();
+            display.drawStr(0, 20, "Time synced!");
+            display.sendBuffer();
+            delay(2000);
+            ESP.restart();
+        }
+        else
+        {
+            display.clearBuffer();
+            display.drawStr(0, 20, "Sync failed!");
+            display.sendBuffer();
+            delay(2000);
+        }
+        menuActive = false;
+        break;
+
+    case 4: // Back
         menuActive = false;
         break;
     }
@@ -115,30 +184,46 @@ void MenuHandler::executeMenuItem()
 void MenuHandler::drawMenu()
 {
     display.clearBuffer();
-
-    // Draw menu title
     display.setFont(u8g2_font_4x6_tf);
     display.drawStr(0, 6, "Menu");
 
+    const char *const *currentMenuItems;
+    uint8_t itemCount;
+
+    // Determine which menu to show
+    if (bleService.isPreviewEnabled() || bleService.isCaptureEnabled() || bleService.isInferenceEnabled())
+    {
+        currentMenuItems = stopMenuItems;
+        itemCount = STOP_MENU_ITEMS_COUNT;
+        // Ensure menuPosition is valid for shorter menu
+        if (menuPosition >= itemCount)
+        {
+            menuPosition = 0;
+        }
+    }
+    else
+    {
+        currentMenuItems = menuItems;
+        itemCount = MENU_ITEMS;
+    }
+
     // Draw menu items
-    for (uint8_t i = 0; i < MENU_ITEMS; i++)
+    for (uint8_t i = 0; i < itemCount; i++)
     {
         if (i == menuPosition)
         {
             display.drawStr(0, 20 + (i * 10), ">");
         }
-        display.drawStr(8, 20 + (i * 10), menuItems[i]);
+        display.drawStr(8, 20 + (i * 10), currentMenuItems[i]);
     }
 
-    // Draw controls hint at bottom
     display.drawStr(0, 63, "Click: Next  Long: Select");
-
     display.sendBuffer();
 }
 
 void MenuHandler::drawDefaultScreen()
 {
-    ESP_LOGD("MenuHandler", "Drawing default screen");
+    ESP_LOGV("MenuHandler", "Drawing default screen");
     display.clearBuffer();
 
     // Cache icon data to avoid reloading every frame
@@ -168,6 +253,8 @@ void MenuHandler::drawDefaultScreen()
     // Draw version and build info
     display.drawStr(0, 6, ("MiddleFox v" + String(VERSION)).c_str());
     display.drawStr(0, 12, ("b:" + String(BUILD_TIMESTAMP)).c_str());
+    // Get current time from RTC singleton
+    display.drawStr(0, 18, rtc.getFormattedDateTime().c_str());
 
     // Draw status information
     display.drawStr(0, 24, "BLE:");
@@ -204,7 +291,7 @@ void MenuHandler::update()
 
     if (firstDraw || is_redraw || (millis() - lastUpdate > 1000))
     { // Update every second or when needed
-        ESP_LOGD("MenuHandler", "Updating display");
+        ESP_LOGV("MenuHandler", "Updating display");
 
         if (menuActive)
         {

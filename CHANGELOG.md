@@ -1,5 +1,93 @@
 # Changelog
 
+## [4.1.3] - 2024-11-24
+
+### Added
+
+- Menu integration with BLE service command system
+- Direct preview control through BLE service interface
+- Enhanced logging for menu actions
+- RTC integration with PCF8563 module
+- Global RTC singleton pattern
+- Time synchronization through WiFi
+- RTC time display in menu
+
+### Changed
+
+- Refactored preview start mechanism to use BLE service
+- Standardized service control flow through BLE commands
+- Improved menu state handling and transitions
+- Centralized RTC access through singleton
+- Improved time sync error handling
+- Enhanced time display formatting
+
+### Fixed
+
+- Menu state consistency with active services
+- Service cleanup before device restart
+- Command handling synchronization
+- Menu item visibility based on service state
+
+### Technical Details
+
+- Menu Handler:
+
+  - Uses BLE service command system
+  - Improved state logging
+  - Better error handling
+
+- BLE Service:
+
+  - Added handleControlCommand method
+  - Enhanced command callback system
+  - Standardized service state management
+
+- RTC Manager:
+
+  - Implemented singleton pattern
+  - Added WiFi time sync
+  - Improved error handling
+  - Enhanced time formatting
+
+## [4.1.2] - 2024-11-24
+
+### Added
+
+- Dynamic menu system with service-aware states
+- Automatic device restart after service stop
+- Unified service control through BLE interface
+- Single stop menu when services are active
+
+### Changed
+
+- Menu behavior now matches BLE service control flow
+- Simplified menu structure when services are running
+- Improved service state handling
+- Enhanced menu state transitions
+
+### Fixed
+
+- Menu state consistency with active services
+- Service cleanup before device restart
+- Command handling synchronization
+- Menu item visibility based on service state
+
+### Technical Details
+
+- Menu System:
+
+  - Added service state detection
+  - Implemented dynamic menu switching
+  - Added proper service cleanup
+  - Enhanced state management
+
+- Service Integration:
+
+  - Unified command handling through BLE
+  - Synchronized state transitions
+  - Improved error handling
+  - Added restart functionality
+
 ## [4.1.1] - 2024-11-24
 
 ### Added

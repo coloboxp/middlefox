@@ -6,11 +6,13 @@
 #include "data_collector.h"
 #include "display_manager.h"
 #include "buzzer_manager.h"
+#include "rtc_manager.h"
 
 extern CustomBLEService bleService;
 extern PreviewService previewService;
 extern DisplayManager& display;
 extern BuzzerManager& buzzer;
+extern RTCManager& rtc;
 
 #ifdef PRODUCTION_MODE
 extern ModelInference inference;

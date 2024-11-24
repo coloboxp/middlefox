@@ -4,7 +4,7 @@
 #include "global_instances.h"
 #include "menu_handler.h"
 #include "Version.h"
-
+#include "rtc_manager.h"
 int sdCardLogOutput(const char *format, va_list args)
 {
   Serial.println("Callback running");
@@ -53,11 +53,17 @@ void setup()
 
   // Initialize menu handler
   menuHandler.begin();
+
+  if (!rtc.begin())
+  {
+    ESP_LOGE("Main", "RTC initialization failed");
+    return;
+  }
 }
 
 void loop()
 {
-    // Update menu and display
-    menuHandler.update();
-    delay(10); // Small delay to prevent CPU hogging
+  // Update menu and display
+  menuHandler.update();
+  delay(10); // Small delay to prevent CPU hogging
 }
