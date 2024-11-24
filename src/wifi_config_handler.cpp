@@ -16,8 +16,7 @@ const char* TZ_INFO = "CET-1CEST,M3.5.0,M10.5.0/3";  // Central European Time co
 bool WiFiConfigHandler::syncTimeFromWiFi() {
     ESP_LOGI(TAG, "Starting WiFi time sync process");
 
-    pinMode(SD_CS_PIN, OUTPUT);
-    if (!SD.begin(SD_CS_PIN)) {
+    if (!SDManager::getInstance().begin()) {
         ESP_LOGE(TAG, "SD Card initialization failed");
         return false;
     }
@@ -100,7 +99,7 @@ bool WiFiConfigHandler::saveWiFiCredentials(const char* ssid, const char* passwo
     doc["ssid"] = ssid;
     doc["pass"] = password;
 
-    File configFile = SD.open(WIFI_CONFIG_FILE, "w");
+    File configFile = SDManager::getInstance().openFile(WIFI_CONFIG_FILE, "w");
     if (!configFile) {
         ESP_LOGE(TAG, "Failed to open config file for writing");
         return false;

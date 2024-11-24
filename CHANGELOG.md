@@ -10,7 +10,8 @@
 - RTC integration with PCF8563 module
 - Global RTC singleton pattern
 - Time synchronization through WiFi
-- RTC time display in menu
+- RTC time display in main screen
+- SDManager singleton for centralized SD card operations
 
 ### Changed
 
@@ -20,9 +21,14 @@
 - Centralized RTC access through singleton
 - Improved time sync error handling
 - Enhanced time display formatting
+- Unified SD card access through SDManager
 
 ### Fixed
 
+- SD card initialization for XIAO Expansion Board
+  - Set correct CS pin (D2)
+  - Add proper pin initialization sequence
+  - Improve initialization reliability
 - Menu state consistency with active services
 - Service cleanup before device restart
 - Command handling synchronization
@@ -48,6 +54,14 @@
   - Added WiFi time sync
   - Improved error handling
   - Enhanced time formatting
+
+- SD Manager:
+
+  - Implemented singleton pattern
+  - Centralized SD card operations
+  - Improved error handling
+  - Added file operation wrappers
+  - Standardized service state management
 
 ## [4.1.2] - 2024-11-24
 

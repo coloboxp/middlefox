@@ -6,7 +6,7 @@
 #include "camera_manager.h"
 #include "config.h"
 #include "esp_log.h"
-#include <SD.h>
+#include "sd_manager.h"
 
 class DataCollector
 {
@@ -26,6 +26,6 @@ private:
     SemaphoreHandle_t cameraMutex;
     bool initSD();
     int getNextImageCount();
-    bool convert_rgb565_to_jpeg(const uint8_t *rgb565_data, int width, int height, 
-                                     uint8_t **jpg_buf_out, size_t *jpg_len_out);
+    bool convert_rgb565_to_jpeg(const uint8_t *rgb565_data, int width, int height,
+                                uint8_t **jpg_buf_out, size_t *jpg_len_out);
 };

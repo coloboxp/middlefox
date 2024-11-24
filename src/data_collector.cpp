@@ -6,8 +6,8 @@ static Camera::Camera camera;
 // Define the static TAG member
 const char *DataCollector::TAG = "DataCollector";
 
-bool DataCollector::convert_rgb565_to_jpeg(const uint8_t *rgb565_data, int width, int height, 
-                                         uint8_t **jpg_buf_out, size_t *jpg_len_out)
+bool DataCollector::convert_rgb565_to_jpeg(const uint8_t *rgb565_data, int width, int height,
+                                           uint8_t **jpg_buf_out, size_t *jpg_len_out)
 {
     if (!rgb565_data || !jpg_buf_out || !jpg_len_out)
     {
@@ -20,8 +20,7 @@ bool DataCollector::convert_rgb565_to_jpeg(const uint8_t *rgb565_data, int width
         .len = static_cast<size_t>(width * height * 2),
         .width = static_cast<size_t>(width),
         .height = static_cast<size_t>(height),
-        .format = PIXFORMAT_RGB565
-    };
+        .format = PIXFORMAT_RGB565};
 
     bool success = frame2jpg(&fb, 100, jpg_buf_out, jpg_len_out);
 
@@ -37,30 +36,13 @@ bool DataCollector::convert_rgb565_to_jpeg(const uint8_t *rgb565_data, int width
 
 bool DataCollector::initSD()
 {
-    // Try multiple times to initialize SD card
-    for (int i = 0; i < 3; i++)
-    {
-        if (SD.begin(21))
-        {
-            uint8_t cardType = SD.cardType();
-            if (cardType != CARD_NONE)
-            {
-                ESP_LOGI(TAG, "SD card OK");
-                return true;
-            }
-        }
-        delay(1000); // Wait a second before retrying
-        SD.end();    // Clean up before retry
-    }
-
-    ESP_LOGE(TAG, "SD Card Mount Failed");
-    return false;
+    return SDManager::getInstance().begin();
 }
 
 int DataCollector::getNextImageCount()
 {
     ESP_LOGI(TAG, "Starting getNextImageCount()");
-    File root = SD.open("/");
+    File root = SDManager::getInstance().openDir("/");
     int maxCount = 0;
 
     if (!root)
@@ -102,8 +84,9 @@ DataCollector::DataCollector(CustomBLEService *ble) : bleService(ble)
     imageCount = 0;
     camera = nullptr;
     cameraMutex = xSemaphoreCreateMutex();
-    
-    bleService->setOperationCallback([this](bool enabled) {
+
+    bleService->setOperationCallback([this](bool enabled)
+                                     {
         ESP_LOGI(TAG, "Data collection callback triggered: %s", enabled ? "START" : "STOP");
         if (enabled) {
             if (!camera && !begin()) {
@@ -120,41 +103,46 @@ DataCollector::DataCollector(CustomBLEService *ble) : bleService(ble)
                 delay(1000);
                 ESP.restart();
             }
-        }
-    });
+        } });
 }
 
-DataCollector::~DataCollector() {
+DataCollector::~DataCollector()
+{
     cleanup();
 }
 
-void DataCollector::cleanup() {
-    if (cameraMutex) {
+void DataCollector::cleanup()
+{
+    if (cameraMutex)
+    {
         vSemaphoreDelete(cameraMutex);
         cameraMutex = nullptr;
     }
-    camera = nullptr;  // Don't delete, it's managed by CameraManager
+    camera = nullptr; // Don't delete, it's managed by CameraManager
 }
 
 bool DataCollector::begin()
 {
     ESP_LOGI(TAG, "=== Starting DataCollector Initialization ===");
-    
+
     // Initialize SD card first
-    if (!initSD()) {
+    if (!initSD())
+    {
         ESP_LOGE(TAG, "SD Card initialization failed");
         return false;
     }
 
     // Get camera instance and configure for capture mode
     camera = CameraManager::getInstance().getCamera();
-    if (!camera) {
+    if (!camera)
+    {
         ESP_LOGE(TAG, "Failed to get camera instance");
         return false;
     }
 
     // Configure camera for capture mode (not preview)
-    if (!CameraManager::getInstance().begin(false)) {
+    if (!CameraManager::getInstance().begin(false))
+    {
         ESP_LOGE(TAG, "Failed to initialize camera in capture mode");
         return false;
     }
@@ -169,25 +157,29 @@ bool DataCollector::begin()
 
 void DataCollector::loop()
 {
-    if (!bleService->isCaptureEnabled()) {
+    if (!bleService->isCaptureEnabled())
+    {
         return;
     }
 
-    if (!camera) {
+    if (!camera)
+    {
         ESP_LOGE(TAG, "Camera not initialized");
         return;
     }
 
     unsigned long currentTime = millis();
-    if (currentTime - lastCapture >= CAPTURE_INTERVAL_MS) {
+    if (currentTime - lastCapture >= CAPTURE_INTERVAL_MS)
+    {
         ESP_LOGD(TAG, "=== Starting New Capture Cycle ===");
 
         // Visual feedback
-        digitalWrite(LED_BUILTIN, LOW);  // Turn ON
+        digitalWrite(LED_BUILTIN, LOW); // Turn ON
         delay(100);
         digitalWrite(LED_BUILTIN, HIGH); // Turn OFF
 
-        if (!camera->capture().isOk()) {
+        if (!camera->capture().isOk())
+        {
             std::string errorMsg = "Capture failed: ";
             errorMsg += camera->exception.toString().c_str();
             bleService->updateServiceStatus("collector", errorMsg);
@@ -199,11 +191,14 @@ void DataCollector::loop()
         // Save RGB565 raw data
         String rgb_path = "/picture" + String(imageCount) + ".rgb";
         File rgb_file = SD.open(rgb_path.c_str(), FILE_WRITE);
-        if (rgb_file) {
+        if (rgb_file)
+        {
             size_t bytesWritten = rgb_file.write(camera->frame->buf, camera->frame->len);
             rgb_file.close();
             ESP_LOGI(TAG, "RGB file saved: %s (Size: %u bytes)", rgb_path.c_str(), bytesWritten);
-        } else {
+        }
+        else
+        {
             ESP_LOGE(TAG, "Failed to create RGB file: %s", rgb_path.c_str());
         }
 
@@ -211,17 +206,21 @@ void DataCollector::loop()
         uint8_t *jpg_buf = NULL;
         size_t jpg_len = 0;
         bool converted = convert_rgb565_to_jpeg(camera->frame->buf, camera->frame->width,
-                                              camera->frame->height, &jpg_buf, &jpg_len);
+                                                camera->frame->height, &jpg_buf, &jpg_len);
 
-        if (converted) {
+        if (converted)
+        {
             String jpg_path = "/picture" + String(imageCount) + ".jpg";
             File jpg_file = SD.open(jpg_path.c_str(), FILE_WRITE);
-            if (jpg_file) {
+            if (jpg_file)
+            {
                 jpg_file.write(jpg_buf, jpg_len);
                 jpg_file.close();
                 ESP_LOGI(TAG, "Saved JPG file: %s", jpg_path.c_str());
                 imageCount++;
-            } else {
+            }
+            else
+            {
                 ESP_LOGE(TAG, "Failed to create JPG file: %s", jpg_path.c_str());
             }
             free(jpg_buf);
