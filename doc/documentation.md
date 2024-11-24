@@ -49,6 +49,7 @@
 ### 6. Menu Navigation
 
 The system provides a hierarchical menu structure:
+
 - **Main Menu**: Primary navigation hub
   - **Settings**: System configuration options
   - **Status**: Current system status and metrics
@@ -62,6 +63,7 @@ Navigation is handled through physical inputs and updates are reflected both on 
 ### 7. Error Handling & Recovery
 
 The system implements several error handling mechanisms:
+
 - **Initialization Failures**: Each component initialization has fallback procedures
 - **Task Monitoring**: Watchdog timers monitor core tasks
 - **Communication Recovery**: Automatic BLE reconnection and WiFi fallback
@@ -69,6 +71,7 @@ The system implements several error handling mechanisms:
 - **Camera Subsystem**: Auto-reset on camera initialization failure
 
 Error states are:
+
 1. Reported through BLE status updates
 2. Displayed on the OLED screen
 3. Logged to persistent storage when available
