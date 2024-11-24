@@ -104,6 +104,38 @@ public:
 
     static bool isCaptureEnabled() { return captureEnabled; }
 
+    void handleControlCallback(Command cmd) {
+        std::string value(1, static_cast<char>(cmd));
+        handleControlCallback(value);
+    }
+    
+    void handleControlCallback(const std::string& value);
+
+    bool handleControlCommand(Command cmd) {
+        if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            switch (cmd) {
+                case Command::START_PREVIEW:
+                    previewEnabled = true;
+                    xSemaphoreGive(mutex);
+                    
+                    if (previewCallback) {
+                        previewCallback(true);
+                    }
+                    updateServiceStatus("preview", "starting");
+                    notifyClients("Preview Starting");
+                    ESP_LOGI(TAG, "Preview Mode Activated - Initializing stream...");
+                    return true;
+                    
+                // ... other cases if needed
+                
+                default:
+                    xSemaphoreGive(mutex);
+                    return false;
+            }
+        }
+        return false;
+    }
+
 private:
     static const char* TAG;  // Define if not already defined
 

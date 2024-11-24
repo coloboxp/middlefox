@@ -59,11 +59,14 @@ void MenuHandler::handleEvent(AceButton *button, uint8_t eventType, uint8_t butt
     switch (eventType)
     {
     case AceButton::kEventLongPressed:
-        if (!menuActive) {
+        if (!menuActive)
+        {
             ESP_LOGI("MenuHandler", "Long press detected - showing menu");
             menuActive = true;
             is_redraw = true;
-        } else {
+        }
+        else
+        {
             ESP_LOGI("MenuHandler", "Long press detected - executing item %d", menuPosition);
             executeMenuItem();
             is_redraw = true;
@@ -86,7 +89,8 @@ void MenuHandler::executeMenuItem()
     switch (menuPosition)
     {
     case 0: // Start Preview
-        previewService.begin();
+        ESP_LOGI("MenuHandler", "Starting preview from menu");
+        bleService.handleControlCommand(CustomBLEService::Command::START_PREVIEW);
         menuActive = false;
         break;
 

@@ -7,6 +7,7 @@
 #include "system_init.h"
 #include "global_instances.h"
 #include "Version.h"
+#include "ble_service.h"
 
 using namespace ace_button;
 
