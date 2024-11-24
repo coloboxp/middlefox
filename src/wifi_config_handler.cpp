@@ -4,6 +4,7 @@
 
 const char* WiFiConfigHandler::TAG = "WiFiConfig";
 const char* WiFiConfigHandler::WIFI_CONFIG_FILE = "/wifi_config.json";
+const int SD_CS_PIN = D2;
 
 // Bratislava timezone settings
 const char* NTP_SERVER = "pool.ntp.org";
@@ -15,7 +16,8 @@ const char* TZ_INFO = "CET-1CEST,M3.5.0,M10.5.0/3";  // Central European Time co
 bool WiFiConfigHandler::syncTimeFromWiFi() {
     ESP_LOGI(TAG, "Starting WiFi time sync process");
 
-    if (!SD.begin(21)) {
+    pinMode(SD_CS_PIN, OUTPUT);
+    if (!SD.begin(SD_CS_PIN)) {
         ESP_LOGE(TAG, "SD Card initialization failed");
         return false;
     }
