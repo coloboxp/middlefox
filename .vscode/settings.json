@@ -1,5 +1,6 @@
 {
     "files.associations": {
+        ".fantomasignore": "ignore",
         "*.md": "markdown",
         "array": "cpp",
         "deque": "cpp",
@@ -9,6 +10,7 @@
         "unordered_set": "cpp",
         "vector": "cpp",
         "string_view": "cpp",
-        "initializer_list": "cpp"
+        "initializer_list": "cpp",
+        "optional": "cpp"
     }
 }

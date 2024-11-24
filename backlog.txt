@@ -132,3 +132,6 @@ const unsigned char *epd_bitmap_foxes_negative_array[3] = {
     epd_bitmap_fox_64x64_1_n};
 
 #endif
+
+
+https://community.platformio.org/t/redirect-esp32-log-messages-to-sd-card/33734/2

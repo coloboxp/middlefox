@@ -1,36 +1,45 @@
 #include "display_manager.h"
+#include "Version.h"
 
 const char *DisplayManager::TAG = "DisplayManager";
 
-DisplayManager* DisplayManager::instance = nullptr;
+DisplayManager *DisplayManager::instance = nullptr;
 
-DisplayManager& DisplayManager::getInstance() {
-    if (instance == nullptr) {
+DisplayManager &DisplayManager::getInstance()
+{
+    if (instance == nullptr)
+    {
         instance = new DisplayManager();
     }
     return *instance;
 }
 
-DisplayManager::DisplayManager() : display(nullptr), initialized(false) {
+DisplayManager::DisplayManager() : display(nullptr), initialized(false)
+{
     ESP_LOGI(TAG, "Creating DisplayManager");
 }
 
-DisplayManager::~DisplayManager() {
-    if (display) {
+DisplayManager::~DisplayManager()
+{
+    if (display)
+    {
         delete display;
     }
 }
 
-bool DisplayManager::begin() {
+bool DisplayManager::begin()
+{
     ESP_LOGI(TAG, "Initializing display...");
 
-    if (initialized) {
+    if (initialized)
+    {
         ESP_LOGW(TAG, "Display already initialized");
         return true;
     }
 
     display = new DISPLAY_MODEL(U8G2_R0, U8X8_PIN_NONE);
-    if (!display || !display->begin()) {
+    if (!display || !display->begin())
+    {
         ESP_LOGE(TAG, "Display initialization failed");
         return false;
     }
@@ -41,9 +50,11 @@ bool DisplayManager::begin() {
     return true;
 }
 
-void DisplayManager::setupDefaults() {
-    if (!display) return;
-    display->setFont(u8g2_font_6x10_tr);
+void DisplayManager::setupDefaults()
+{
+    if (!display)
+        return;
+    display->setFont(u8g2_font_4x6_tf);
     display->setDrawColor(1);
     display->setFontPosTop();
     clear();
@@ -131,6 +142,13 @@ void DisplayManager::drawXBM(const XBMIcon &icon, int x, int y)
     }
 }
 
+void DisplayManager::drawXBM(int x, int y, int width, int height, const unsigned char *bitmap)
+{
+    if (!display)
+        return;
+    display->drawXBM(x, y, width, height, bitmap);
+}
+
 void DisplayManager::setFont(const uint8_t *font)
 {
     if (!display)
@@ -174,10 +192,11 @@ u8g2_uint_t DisplayManager::getDisplayHeight() const
     return display ? display->getDisplayHeight() : 0;
 }
 
-void DisplayManager::checkInit() {
-    if (!isInitialized()) {
+void DisplayManager::checkInit()
+{
+    if (!isInitialized())
+    {
         ESP_LOGE(TAG, "Display not initialized!");
         throw std::runtime_error("Display not initialized");
     }
 }
-

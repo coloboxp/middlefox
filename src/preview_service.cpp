@@ -78,7 +78,7 @@ bool PreviewService::initMJPEGServer()
     ESP_LOGD(TAG, "Initializing MJPEG server...");
 
     // Ensure camera is in preview mode
-    camera->resolution.vga();
+    camera->resolution.face();
     camera->quality.high();
     camera->pixformat.jpeg();  // Explicitly set JPEG format
     
