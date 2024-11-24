@@ -53,8 +53,47 @@ class CustomBLEService {
         -initMJPEGServer()
     }
 
+    class SystemInitializer {
+        +initializeDisplay()
+        +initializeBuzzer()
+        +initializeBLE()
+        +showStartupIcons()
+        +playStartupSequence()
+    }
+
+    class MenuHandler {
+        -DISPLAY_MODEL display
+        +begin()
+        +update()
+        -handleInput()
+        -drawMenu()
+    }
+
+    class BuzzerManager {
+        -static BuzzerManager instance
+        -bool muted
+        +getInstance() BuzzerManager
+        +setMute(bool)
+        +playStartupSequence()
+    }
+
+    class RTCManager {
+        +begin()
+        +getTime()
+        +setTime()
+        -configureRTC()
+    }
+
     CustomBLEService <-- DataCollector
     CustomBLEService <-- PreviewService
     CameraManager --> DataCollector
     CameraManager --> PreviewService
+    SystemInitializer --> MenuHandler
+    SystemInitializer --> BuzzerManager
+    SystemInitializer --> RTCManager
+    MenuHandler --> DISPLAY_MODEL
+    SystemInitializer --> CustomBLEService
+    MenuHandler --> BuzzerManager
+    MenuHandler --> CustomBLEService
+    SystemInitializer --> DISPLAY_MODEL
 ```

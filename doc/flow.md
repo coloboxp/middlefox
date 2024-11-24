@@ -2,7 +2,13 @@
 
 ```mermaid
 graph TD
-    A[Start] --> B[Setup]
+    A[Start] --> B1[Initialize Display]
+    B1 --> B2[Initialize Buzzer]
+    B2 --> B3[Show Startup Icons]
+    B3 --> B4[Initialize BLE]
+    B4 --> B5[Initialize RTC]
+    B5 --> B6[Initialize Menu]
+    B6 --> B[Setup]
     B --> C[Initialize BLE Service]
     C --> D[Create Tasks]
 
@@ -43,4 +49,21 @@ graph TD
     AB --> AC[Process Frame]
     AC --> AD[Update Results]
     AD --> K
+
+    F --> M1[Menu Handler]
+    M1 --> M2{Button Input}
+    M2 -->|Up/Down| M3[Navigate Menu]
+    M2 -->|Select| M4[Execute Action]
+    M2 -->|Back| M5[Previous Menu]
+    
+    M3 --> M6[Update Display]
+    M4 --> M7{Menu Type}
+    M7 -->|Settings| M8[Update Config]
+    M7 -->|Status| M9[Show Status]
+    M7 -->|Operation| K
+    
+    M8 --> M6
+    M9 --> M6
+    M5 --> M6
+    M6 --> M1
 ```
