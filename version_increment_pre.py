@@ -53,7 +53,7 @@ if not os.path.exists(".version_no_increment"):
         #define BUILD_TIMESTAMP "{}"
     #endif
     """.format(VERSION_PREFIX + str(VERSION_PATCH_NUMBER), 
-              datetime.datetime.now().strftime("%d.%b.%y %H%M%S"))
+              datetime.datetime.now().strftime("%d.%b.%y %H:%M:%S"))
 
     if os.environ.get('PLATFORMIO_INCLUDE_DIR') is not None:
         VERSION_HEADER = os.environ.get('PLATFORMIO_INCLUDE_DIR') + os.sep + VERSION_HEADER

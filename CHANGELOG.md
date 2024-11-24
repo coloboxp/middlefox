@@ -1,8 +1,24 @@
 # Changelog
 
-## [1.1.0] - 2024-03-XX
+## [4.1.0] - 2024-11-24
 
-### Added
+### Added - 4.1.0
+
+- Debug logging for bitmap conversion
+- Validation checks for icon data
+
+### Fixed - 4.1.0
+
+- XBM icon rendering and orientation
+- Build timestamp format (now DD.MMM.YY HH:MM:SS)
+- Icon positioning in display
+- Bitmap conversion for U8G2 display
+- Display of startup icons
+- Display of startup messages
+
+## [1.1.0] - 2024-11-23
+
+### Added - 1.1.0
 
 - U8G2 display manager with comprehensive buffer management
 - Buzzer manager with multiple sound patterns
@@ -23,7 +39,7 @@
 - Service state transitions
 - System restart handling
 
-### Changed
+### Changed - 1.1.0
 
 - Switched from U8X8 to U8G2 for better graphics
 - Improved initialization sequence
@@ -33,7 +49,7 @@
 - Better error handling in tasks
 - Enhanced code organization with singleton pattern
 
-### Technical Details
+### Technical Details - 1.1.0
 
 - Display Manager:
 
@@ -62,7 +78,7 @@
   - Updated debug levels
   - Multiple build environments (release, testing, debug)
 
-### Testing
+### Testing - 1.1.0
 
 - Verified display initialization and text rendering
 - Tested buzzer patterns and sound quality
@@ -72,7 +88,7 @@
 - Tested service state transitions
 - Confirmed system restart functionality
 
-### Documentation
+### Documentation - 1.1.0
 
 - Added code documentation
 - Improved error logging

@@ -17,9 +17,11 @@ A smart camera-based lane assistance system designed to help foxes stay centered
 
 - **OLED Display**: Real-time status and feedback
   - U8G2-based graphics
+  - Proper XBM icon rendering
   - Buffer management for smooth updates
   - Centered text rendering
   - Multiple font support
+  - Icon support with correct orientation
 - **Audio Feedback**
   - Multiple alert patterns
   - "What does the fox say?" boot sequence
