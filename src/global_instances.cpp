@@ -9,7 +9,7 @@ DataCollector collector(&bleService);
 ModelInference inference;
 #endif
 
-DISPLAY_MODEL u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
+DISPLAY_MODEL u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE, /* clock=*/SCL, /* data=*/SDA);
 
 // Define global display and buzzer references
 DisplayManager &display = DisplayManager::getInstance();

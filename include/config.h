@@ -16,7 +16,7 @@ enum OperationMode
 // Camera settings
 #define LED_PIN 21
 #define BUZZER_PIN 4 // Adjust pin number according to your hardware
-#define BUTTON_PIN 1
+#define BUTTON_PIN D1
 // Time intervals
 #define CAPTURE_INTERVAL_MS 5000 // 5 seconds
 

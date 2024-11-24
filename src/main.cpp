@@ -2,6 +2,7 @@
 #include "system_init.h"
 #include "task_manager.h"
 #include "global_instances.h"
+#include "menu_handler.h"
 #include "Version.h"
 
 int sdCardLogOutput(const char *format, va_list args)
@@ -12,6 +13,9 @@ int sdCardLogOutput(const char *format, va_list args)
   Serial.print(buf);
   return ret;
 }
+
+extern DISPLAY_MODEL u8g2;
+MenuHandler menuHandler(u8g2);
 
 void setup()
 {
@@ -46,9 +50,14 @@ void setup()
     ESP_LOGE("Main", "Failed to start tasks");
     return;
   }
+
+  // Initialize menu handler
+  menuHandler.begin();
 }
 
 void loop()
 {
-  vTaskDelete(NULL);
+    // Update menu and display
+    menuHandler.update();
+    delay(10); // Small delay to prevent CPU hogging
 }

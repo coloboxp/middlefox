@@ -1,5 +1,39 @@
 # Changelog
 
+## [4.1.1] - 2024-11-24
+
+### Added
+- Single-button menu interface with long press activation
+- Display update throttling for better performance
+- Icon caching to prevent excessive reloading
+- AceButton library integration for robust button handling
+
+### Fixed
+- Excessive screen refresh rate
+- Icon rendering memory usage
+- Button responsiveness issues
+- Font size and layout optimization
+- Display buffer management
+
+### Changed
+- Switched to u8g2_font_4x6_tf for better information density
+- Improved menu navigation logic
+- Enhanced status display layout
+- Optimized display update timing
+
+### Technical Details
+- Display Manager:
+  - Added update throttling (1 second or on-demand)
+  - Implemented icon data caching
+  - Improved buffer management
+  - Enhanced layout organization
+
+- Button Handler:
+  - Added debounce configuration
+  - Implemented multiple press types
+  - Added event logging
+  - Improved response timing
+
 ## [4.1.0] - 2024-11-24
 
 ### Added - 4.1.0
