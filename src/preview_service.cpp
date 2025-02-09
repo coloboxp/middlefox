@@ -17,9 +17,9 @@ PreviewService::PreviewService(CustomBLEService *ble) : streamEnabled(false), ca
             this->disable();
             streamEnabled = false;
             
-            // Check if we need to restart
-            if (!bleService->isPreviewEnabled() && !bleService->isCaptureEnabled()) {
-                ESP_LOGI(TAG, "All services stopped - Triggering restart");
+            // Only restart if explicitly stopped and not disconnecting
+            if (bleService->wasExplicitlyStopped() && !bleService->isDisconnecting()) {
+                ESP_LOGI(TAG, "Explicit stop command received - Triggering restart");
                 bleService->notifyClients("Restarting device to idle state...");
                 delay(1000);
                 ESP.restart();

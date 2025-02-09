@@ -85,41 +85,46 @@ void CustomBLEService::handleControlCallback(NimBLECharacteristic *pCharacterist
         switch (value[0])
         {
         case Command::START_PREVIEW:
-            if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE)
+            {
                 previewEnabled = true;
                 xSemaphoreGive(mutex);
-                
+
                 // First notify the preview callback to initialize
-                if (previewCallback) {
+                if (previewCallback)
+                {
                     previewCallback(true);
                 }
-                
+
                 // Then update status and notify clients
                 updateServiceStatus("preview", "starting");
                 notifyClients("Preview Starting");
                 ESP_LOGI(TAG, "Preview Mode Activated - Initializing stream...");
-            } else {
+            }
+            else
+            {
                 ESP_LOGE(TAG, "Failed to take mutex in START_PREVIEW");
             }
             break;
         case Command::STOP_PREVIEW:
-            if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE)
+            {
                 previewEnabled = false;
+                m_explicitStop = true; // Set flag for explicit stop
                 xSemaphoreGive(mutex);
-                
+
                 if (previewCallback)
                     previewCallback(false);
                 notifyClients("Preview Stopped");
                 ESP_LOGI(TAG, "Preview Stopped - Streaming disabled");
-            } else {
-                ESP_LOGE(TAG, "Failed to take mutex in STOP_PREVIEW");
             }
             break;
         case Command::START_DATA_COLLECTION:
-            if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE)
+            {
                 captureEnabled = true;
                 xSemaphoreGive(mutex);
-                
+
                 if (operationCallback)
                     operationCallback(true);
                 notifyClients("Operation Started");
@@ -127,10 +132,12 @@ void CustomBLEService::handleControlCallback(NimBLECharacteristic *pCharacterist
             }
             break;
         case Command::STOP_DATA_COLLECTION:
-            if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE)
+            {
                 captureEnabled = false;
+                m_explicitStop = true; // Set flag for explicit stop
                 xSemaphoreGive(mutex);
-                
+
                 if (operationCallback)
                     operationCallback(false);
                 notifyClients("Operation Stopped");
@@ -144,6 +151,7 @@ void CustomBLEService::handleControlCallback(NimBLECharacteristic *pCharacterist
             break;
         case Command::STOP_INFERENCE:
             inferenceEnabled = false;
+            m_explicitStop = true; // Set flag for explicit stop
             notifyClients("Inference Stopped");
             ESP_LOGI(TAG, "Inference Stopped - Device is now idle");
             break;
@@ -529,12 +537,15 @@ void CustomBLEService::handleDisconnection()
 {
     ESP_LOGI(TAG, "Handling disconnection...");
 
-    // Reset states
+    m_disconnecting = true; // Set disconnecting flag before callbacks
+
+    // Reset states but don't restart
     captureEnabled = false;
     previewEnabled = false;
     inferenceEnabled = false;
+    m_explicitStop = false; // Reset explicit stop flag on disconnection
 
-    // Notify callbacks if needed
+    // Notify callbacks with explicit disconnect flag
     if (operationCallback)
         operationCallback(false);
     if (previewCallback)
@@ -542,9 +553,11 @@ void CustomBLEService::handleDisconnection()
     if (inferenceCallback)
         inferenceCallback(false);
 
+    m_disconnecting = false; // Reset disconnecting flag after callbacks
+
     // Restart advertising with retry mechanism
     const int MAX_RETRY = 3;
-    const int RETRY_DELAY = 1000; // 1 second
+    const int RETRY_DELAY = 1000;
 
     for (int i = 0; i < MAX_RETRY; i++)
     {
@@ -558,6 +571,11 @@ void CustomBLEService::handleDisconnection()
     }
 
     ESP_LOGE(TAG, "Failed to restart advertising after all retries");
+}
+
+bool CustomBLEService::isDisconnecting() const
+{
+    return m_disconnecting;
 }
 
 void CustomBLEService::cleanup()
@@ -609,3 +627,6 @@ void CustomBLEService::checkConnectionHealth()
         lastCheck = millis();
     }
 }
+
+bool CustomBLEService::wasExplicitlyStopped() const { return m_explicitStop; }
+void CustomBLEService::setExplicitStop(bool value) { m_explicitStop = value; }

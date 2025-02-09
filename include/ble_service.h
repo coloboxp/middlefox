@@ -16,7 +16,7 @@
 #define SERVICE_STATUS_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26ad"
 #define SERVICE_METRICS_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26ac"
 
-#define BLE_LOG_LEVEL ESP_LOG_INFO  // Change to ESP_LOG_DEBUG or ESP_LOG_VERBOSE for more detail
+#define BLE_LOG_LEVEL ESP_LOG_INFO // Change to ESP_LOG_DEBUG or ESP_LOG_VERBOSE for more detail
 
 class CustomBLEService;                    // Forward declaration
 extern CustomBLEService *globalBLEService; // Global instance pointer
@@ -24,26 +24,29 @@ extern CustomBLEService *globalBLEService; // Global instance pointer
 class ServerCallbacks : public NimBLEServerCallbacks
 {
 private:
-    static const char* TAG;
+    static const char *TAG;
+
 public:
-    void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) override;
-    void onDisconnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) override;
+    void onConnect(NimBLEServer *pServer, ble_gap_conn_desc *desc) override;
+    void onDisconnect(NimBLEServer *pServer, ble_gap_conn_desc *desc) override;
 };
 
 class ControlCallbacks : public NimBLECharacteristicCallbacks
 {
 private:
-    static const char* TAG;
+    static const char *TAG;
+
 public:
-    void onWrite(NimBLECharacteristic* pCharacteristic) override;
+    void onWrite(NimBLECharacteristic *pCharacteristic) override;
 };
 
 class PreviewInfoCallbacks : public NimBLECharacteristicCallbacks
 {
 private:
-    static const char* TAG;
+    static const char *TAG;
+
 public:
-    void onRead(NimBLECharacteristic* pCharacteristic) override;
+    void onRead(NimBLECharacteristic *pCharacteristic) override;
 };
 
 class CustomBLEService
@@ -102,42 +105,52 @@ public:
     bool updateState(bool &stateVar, bool newValue);
     void checkConnectionHealth();
 
+    bool isDisconnecting() const;
+    bool wasExplicitlyStopped() const;
+
+    void setExplicitStop(bool value);
+
     static bool isCaptureEnabled() { return captureEnabled; }
 
-    void handleControlCallback(Command cmd) {
+    void handleControlCallback(Command cmd)
+    {
         std::string value(1, static_cast<char>(cmd));
         handleControlCallback(value);
     }
-    
-    void handleControlCallback(const std::string& value);
 
-    bool handleControlCommand(Command cmd) {
-        if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            switch (cmd) {
-                case Command::START_PREVIEW:
-                    previewEnabled = true;
-                    xSemaphoreGive(mutex);
-                    
-                    if (previewCallback) {
-                        previewCallback(true);
-                    }
-                    updateServiceStatus("preview", "starting");
-                    notifyClients("Preview Starting");
-                    ESP_LOGI(TAG, "Preview Mode Activated - Initializing stream...");
-                    return true;
-                    
+    void handleControlCallback(const std::string &value);
+
+    bool handleControlCommand(Command cmd)
+    {
+        if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE)
+        {
+            switch (cmd)
+            {
+            case Command::START_PREVIEW:
+                previewEnabled = true;
+                xSemaphoreGive(mutex);
+
+                if (previewCallback)
+                {
+                    previewCallback(true);
+                }
+                updateServiceStatus("preview", "starting");
+                notifyClients("Preview Starting");
+                ESP_LOGI(TAG, "Preview Mode Activated - Initializing stream...");
+                return true;
+
                 // ... other cases if needed
-                
-                default:
-                    xSemaphoreGive(mutex);
-                    return false;
+
+            default:
+                xSemaphoreGive(mutex);
+                return false;
             }
         }
         return false;
     }
 
 private:
-    static const char* TAG;  // Define if not already defined
+    static const char *TAG; // Define if not already defined
 
     bool createControlCharacteristic();
     bool createStatusCharacteristic();
@@ -149,6 +162,8 @@ private:
     static bool captureEnabled;
     static bool previewEnabled;
     static bool inferenceEnabled;
+    bool m_explicitStop;
+    bool m_disconnecting;
     ConnectionState connectionState;
 
     NimBLEServer *pServer;

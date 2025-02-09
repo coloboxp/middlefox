@@ -96,9 +96,9 @@ DataCollector::DataCollector(CustomBLEService *ble) : bleService(ble)
             // Start capturing
             lastCapture = 0;  // Force immediate first capture
         } else {
-            // Stop capturing and check for restart
-            if (!bleService->isPreviewEnabled() && !bleService->isCaptureEnabled()) {
-                ESP_LOGI(TAG, "All services stopped - Triggering restart");
+            // Only restart if this was triggered by a stop command, not disconnection
+            if (bleService->wasExplicitlyStopped() && !bleService->isDisconnecting()) {
+                ESP_LOGI(TAG, "Explicit stop command received - Triggering restart");
                 bleService->notifyClients("Restarting device to idle state...");
                 delay(1000);
                 ESP.restart();
@@ -125,12 +125,22 @@ bool DataCollector::begin()
 {
     ESP_LOGI(TAG, "=== Starting DataCollector Initialization ===");
 
-    // Initialize SD card first
+    // Initialize SD card first with better error handling
     if (!initSD())
     {
         ESP_LOGE(TAG, "SD Card initialization failed");
         return false;
     }
+
+    // Verify SD card is writable
+    File testFile = SD.open("/test.txt", FILE_WRITE);
+    if (!testFile)
+    {
+        ESP_LOGE(TAG, "Failed to create test file - SD card may be write-protected or not properly mounted");
+        return false;
+    }
+    testFile.close();
+    SD.remove("/test.txt");
 
     // Get camera instance and configure for capture mode
     camera = CameraManager::getInstance().getCamera();
@@ -165,6 +175,7 @@ void DataCollector::loop()
     if (!camera)
     {
         ESP_LOGE(TAG, "Camera not initialized");
+        BuzzerManager::getInstance().playHighImportance(); // Error sound
         return;
     }
 
@@ -183,47 +194,82 @@ void DataCollector::loop()
             std::string errorMsg = "Capture failed: ";
             errorMsg += camera->exception.toString().c_str();
             bleService->updateServiceStatus("collector", errorMsg);
+            BuzzerManager::getInstance().playHighImportance(); // Error sound
             return;
         }
 
         bleService->updateServiceStatus("collector", "Image captured successfully");
 
-        // Save RGB565 raw data
+        // Save RGB565 raw data with better error handling
         String rgb_path = "/picture" + String(imageCount) + ".rgb";
         File rgb_file = SD.open(rgb_path.c_str(), FILE_WRITE);
-        if (rgb_file)
-        {
-            size_t bytesWritten = rgb_file.write(camera->frame->buf, camera->frame->len);
-            rgb_file.close();
-            ESP_LOGI(TAG, "RGB file saved: %s (Size: %u bytes)", rgb_path.c_str(), bytesWritten);
-        }
-        else
+        if (!rgb_file)
         {
             ESP_LOGE(TAG, "Failed to create RGB file: %s", rgb_path.c_str());
+            bleService->updateServiceStatus("collector", "Failed to create RGB file");
+            BuzzerManager::getInstance().playMediumImportance(); // Warning sound
+            return;
         }
 
-        // Convert and save JPEG
+        size_t bytesWritten = rgb_file.write(camera->frame->buf, camera->frame->len);
+        rgb_file.close();
+
+        if (bytesWritten != camera->frame->len)
+        {
+            ESP_LOGE(TAG, "Failed to write complete RGB data. Written: %u, Expected: %u",
+                     bytesWritten, camera->frame->len);
+            bleService->updateServiceStatus("collector", "Failed to write complete RGB data");
+            BuzzerManager::getInstance().playMediumImportance(); // Warning sound
+            return;
+        }
+
+        ESP_LOGI(TAG, "RGB file saved: %s (Size: %u bytes)", rgb_path.c_str(), bytesWritten);
+
+        // Convert and save JPEG with better error handling
         uint8_t *jpg_buf = NULL;
         size_t jpg_len = 0;
         bool converted = convert_rgb565_to_jpeg(camera->frame->buf, camera->frame->width,
                                                 camera->frame->height, &jpg_buf, &jpg_len);
 
-        if (converted)
+        if (converted && jpg_buf != NULL && jpg_len > 0)
         {
             String jpg_path = "/picture" + String(imageCount) + ".jpg";
             File jpg_file = SD.open(jpg_path.c_str(), FILE_WRITE);
-            if (jpg_file)
-            {
-                jpg_file.write(jpg_buf, jpg_len);
-                jpg_file.close();
-                ESP_LOGI(TAG, "Saved JPG file: %s", jpg_path.c_str());
-                imageCount++;
-            }
-            else
+            if (!jpg_file)
             {
                 ESP_LOGE(TAG, "Failed to create JPG file: %s", jpg_path.c_str());
+                free(jpg_buf);
+                bleService->updateServiceStatus("collector", "Failed to create JPG file");
+                BuzzerManager::getInstance().playMediumImportance(); // Warning sound
+                return;
             }
+
+            size_t jpgBytesWritten = jpg_file.write(jpg_buf, jpg_len);
+            jpg_file.close();
+
+            if (jpgBytesWritten != jpg_len)
+            {
+                ESP_LOGE(TAG, "Failed to write complete JPG data. Written: %u, Expected: %u",
+                         jpgBytesWritten, jpg_len);
+                free(jpg_buf);
+                bleService->updateServiceStatus("collector", "Failed to write complete JPG data");
+                BuzzerManager::getInstance().playMediumImportance(); // Warning sound
+                return;
+            }
+
+            ESP_LOGI(TAG, "Saved JPG file: %s (Size: %u bytes)", jpg_path.c_str(), jpg_len);
             free(jpg_buf);
+            imageCount++;
+            // BuzzerManager::getInstance().playLowImportance(); // Success beep
+        }
+        else
+        {
+            ESP_LOGE(TAG, "JPEG conversion failed");
+            bleService->updateServiceStatus("collector", "JPEG conversion failed");
+            if (jpg_buf)
+                free(jpg_buf);
+            BuzzerManager::getInstance().playHighImportance(); // Error sound
+            return;
         }
 
         lastCapture = currentTime;

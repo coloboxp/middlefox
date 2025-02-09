@@ -7,6 +7,7 @@
 #include "config.h"
 #include "esp_log.h"
 #include "sd_manager.h"
+#include "buzzer_manager.h"
 
 class DataCollector
 {
