@@ -48,16 +48,20 @@ int DataCollector::getNextImageCount()
     if (!root)
     {
         ESP_LOGE(TAG, "Failed to open root directory");
-        return 0;
+        return -1; // Return error code
     }
 
     ESP_LOGI(TAG, "Scanning files...");
-    while (true)
+    int scannedFiles = 0;
+    const int MAX_FILES_TO_SCAN = 1000; // Safety limit to prevent hangs
+    
+    while (scannedFiles < MAX_FILES_TO_SCAN)
     {
         File entry = root.openNextFile();
         if (!entry)
             break;
 
+        scannedFiles++;
         String fileName = String(entry.name());
         ESP_LOGD(TAG, "Found file: %s", fileName.c_str());
 
@@ -73,7 +77,12 @@ int DataCollector::getNextImageCount()
     }
 
     root.close();
-    ESP_LOGI(TAG, "Scan complete. Next image number will be: %d", maxCount + 1);
+    
+    if (scannedFiles >= MAX_FILES_TO_SCAN) {
+        ESP_LOGW(TAG, "Reached maximum file scan limit (%d files)", MAX_FILES_TO_SCAN);
+    }
+    
+    ESP_LOGI(TAG, "Scan complete. Scanned %d files. Next image number will be: %d", scannedFiles, maxCount + 1);
     return maxCount + 1;
 }
 
@@ -91,17 +100,32 @@ DataCollector::DataCollector(CustomBLEService *ble) : bleService(ble)
         if (enabled) {
             if (!camera && !begin()) {
                 ESP_LOGE(TAG, "Failed to initialize data collector");
+                BuzzerManager::getInstance().playHighImportance(); // Error sound
                 return;
             }
             // Start capturing
             lastCapture = 0;  // Force immediate first capture
         } else {
             // Only restart if this was triggered by a stop command, not disconnection
+            // and only if we need to terminate completely
             if (bleService->wasExplicitlyStopped() && !bleService->isDisconnecting()) {
-                ESP_LOGI(TAG, "Explicit stop command received - Triggering restart");
-                bleService->notifyClients("Restarting device to idle state...");
-                delay(1000);
-                ESP.restart();
+                // Instead of restarting, just clean up resources
+                ESP_LOGI(TAG, "Explicit stop command received - Cleaning up resources");
+                bleService->notifyClients("Stopping data collection mode");
+                
+                // Release camera resources but don't restart
+                if (camera) {
+                    camera = nullptr; // CameraManager owns the camera
+                    CameraManager::getInstance().releaseCamera();
+                }
+                
+                // Only restart if we detect an error condition
+                if (SDManager::getInstance().isReady() == false) {
+                    ESP_LOGE(TAG, "SD card in bad state, restarting device");
+                    bleService->notifyClients("SD card error, restarting...");
+                    delay(1000);
+                    ESP.restart();
+                }
             }
         } });
 }
@@ -125,18 +149,31 @@ bool DataCollector::begin()
 {
     ESP_LOGI(TAG, "=== Starting DataCollector Initialization ===");
 
-    // Initialize SD card first with better error handling
-    if (!initSD())
-    {
-        ESP_LOGE(TAG, "SD Card initialization failed");
+    // Initialize SD card first with better error handling and retry logic
+    int retries = 0;
+    const int MAX_RETRIES = 3;
+    
+    while (retries < MAX_RETRIES) {
+        if (initSD()) {
+            break;
+        }
+        ESP_LOGW(TAG, "SD Card initialization failed, retrying (%d/%d)...", retries + 1, MAX_RETRIES);
+        delay(500);
+        retries++;
+    }
+    
+    if (retries >= MAX_RETRIES) {
+        ESP_LOGE(TAG, "SD Card initialization failed after %d attempts", MAX_RETRIES);
+        BuzzerManager::getInstance().playHighImportance(); // Error sound
         return false;
     }
 
-    // Verify SD card is writable
+    // Verify SD card is writable with proper error handling
     File testFile = SD.open("/test.txt", FILE_WRITE);
     if (!testFile)
     {
         ESP_LOGE(TAG, "Failed to create test file - SD card may be write-protected or not properly mounted");
+        BuzzerManager::getInstance().playHighImportance(); // Error sound
         return false;
     }
     testFile.close();
@@ -157,8 +194,15 @@ bool DataCollector::begin()
         return false;
     }
 
-    // Get the next available image count
-    imageCount = getNextImageCount();
+    // Get the next available image count with improved error handling
+    int nextImageNum = getNextImageCount();
+    if (nextImageNum < 0) {
+        ESP_LOGE(TAG, "Failed to determine next image number");
+        BuzzerManager::getInstance().playHighImportance(); // Error sound
+        return false;
+    }
+    
+    imageCount = nextImageNum;
     ESP_LOGI(TAG, "Image counter initialized. Starting from: %d", imageCount);
 
     ESP_LOGI(TAG, "=== DataCollector Initialization Complete ===");

@@ -16,6 +16,12 @@ public:
 
     bool begin(bool isPreviewMode = false);
     Camera::Camera* getCamera() { return &camera; }
+    void releaseCamera() { 
+        if (initialized) {
+            ESP_LOGI(TAG, "Releasing camera resources");
+            initialized = false;
+        }
+    }
     
 private:
     CameraManager() {}
