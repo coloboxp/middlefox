@@ -15,34 +15,25 @@ CustomBLEService *globalBLEService = nullptr;
 static const unsigned long STATUS_UPDATE_INTERVAL = 5000;  // 5 seconds for general status
 static const unsigned long SERVICE_UPDATE_INTERVAL = 1000; // 1 second for service updates
 
-void ServerCallbacks::onConnect(NimBLEServer *pServer, ble_gap_conn_desc *desc)
+void ServerCallbacks::onConnect(NimBLEServer *pServer, NimBLEConnInfo& connInfo)
 {
     ESP_LOGI(TAG, "Client Connected - Address: %s",
-             NimBLEAddress(desc->peer_ota_addr).toString().c_str());
+             connInfo.getAddress().toString().c_str());
     if (globalBLEService)
     {
         globalBLEService->updateConnectionState(CustomBLEService::CONNECTED);
     }
 }
 
-void ServerCallbacks::onDisconnect(NimBLEServer *pServer, ble_gap_conn_desc *desc)
+void ServerCallbacks::onDisconnect(NimBLEServer *pServer, NimBLEConnInfo& connInfo, int reason)
 {
-    if (desc != nullptr)
-    {
-        ESP_LOGI(TAG, "Client Disconnected - Details:"
-                      "\n\tPeer Address: %s"
-                      "\n\tConnection Handle: %d"
-                      "\n\tConnection Interval: %d ms"
-                      "\n\tConnection Timeout: %d ms",
-                 NimBLEAddress(desc->peer_ota_addr).toString().c_str(),
-                 desc->conn_handle,
-                 (desc->conn_itvl * 1.25),
-                 (desc->supervision_timeout * 10));
-    }
-    else
-    {
-        ESP_LOGI(TAG, "Client Disconnected - No descriptor available");
-    }
+    ESP_LOGI(TAG, "Client Disconnected - Details:"
+                  "\n\tPeer Address: %s"
+                  "\n\tConnection Handle: %d"
+                  "\n\tReason: %d",
+             connInfo.getAddress().toString().c_str(),
+             connInfo.getConnHandle(),
+             reason);
 
     if (globalBLEService)
     {
@@ -53,7 +44,7 @@ void ServerCallbacks::onDisconnect(NimBLEServer *pServer, ble_gap_conn_desc *des
     pServer->startAdvertising();
 }
 
-void ControlCallbacks::onWrite(NimBLECharacteristic *pCharacteristic)
+void ControlCallbacks::onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo& connInfo)
 {
     if (globalBLEService)
     {
@@ -61,7 +52,7 @@ void ControlCallbacks::onWrite(NimBLECharacteristic *pCharacteristic)
     }
 }
 
-void PreviewInfoCallbacks::onRead(NimBLECharacteristic *pCharacteristic)
+void PreviewInfoCallbacks::onRead(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo& connInfo)
 {
     // Implementation if needed
 }
@@ -308,9 +299,9 @@ bool CustomBLEService::begin()
     ESP_LOGI(TAG, "6️⃣ Starting Advertising...");
     NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
-    pAdvertising->setScanResponse(true);
-    pAdvertising->setMinPreferred(0x06);
-    pAdvertising->setMaxPreferred(0x12);
+    pAdvertising->enableScanResponse(true);
+    pAdvertising->setMinInterval(0x06);
+    pAdvertising->setMaxInterval(0x12);
 
     if (!pAdvertising->start())
     {

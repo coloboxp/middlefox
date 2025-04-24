@@ -27,8 +27,8 @@ private:
     static const char *TAG;
 
 public:
-    void onConnect(NimBLEServer *pServer, ble_gap_conn_desc *desc) override;
-    void onDisconnect(NimBLEServer *pServer, ble_gap_conn_desc *desc) override;
+    void onConnect(NimBLEServer *pServer, NimBLEConnInfo& connInfo) override;
+    void onDisconnect(NimBLEServer *pServer, NimBLEConnInfo& connInfo, int reason) override;
 };
 
 class ControlCallbacks : public NimBLECharacteristicCallbacks
@@ -37,7 +37,7 @@ private:
     static const char *TAG;
 
 public:
-    void onWrite(NimBLECharacteristic *pCharacteristic) override;
+    void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo& connInfo) override;
 };
 
 class PreviewInfoCallbacks : public NimBLECharacteristicCallbacks
@@ -46,7 +46,7 @@ private:
     static const char *TAG;
 
 public:
-    void onRead(NimBLECharacteristic *pCharacteristic) override;
+    void onRead(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo& connInfo) override;
 };
 
 class CustomBLEService
